@@ -1,219 +1,368 @@
 # SecureEndpoint Manager
 
-SecureEndpoint Manager is an enterprise platform for device and software compliance, in the same space as Microsoft Intune and NinjaOne. It enrolls Windows, Linux and macOS endpoints with a lightweight Go agent and enforces company security policy on them: USB storage control, approved software only, antivirus/EDR, disk encryption, firewall, patching and screen lock. Every device gets a compliance score and a risk level, alerts go out on email, SMS, WhatsApp, Slack, Teams or webhooks, and every action lands in a tamper-evident audit trail.
+**An enterprise Device & Software Compliance + Workforce Productivity platform** — in the
+same space as Microsoft Intune, ManageEngine Endpoint Central, JumpCloud and NinjaOne, with
+an added employee productivity/attendance module and AI work-intelligence summaries.
+
+It enrols Windows, Linux and macOS endpoints with a lightweight Go agent and enforces
+company security policy: USB storage control, approved-software-only, antivirus/EDR, disk
+encryption, firewall, patching and screen lock. Every device gets a 0–100 compliance score
+and a risk level; alerts go out over email, SMS, WhatsApp, Slack, Teams or webhooks; and
+every action lands in a tamper-evident audit trail. The optional **Workforce** module adds
+attendance, active/idle and app/website tracking, task time, structured daily reports and
+Claude-powered daily summaries — built privacy-first (no keystroke content, domains only,
+opt-in blurred screenshots, visible tracking notice, employee self-view).
 
 | | |
 |---|---|
-| **Backend** | NestJS 11, Prisma 6, PostgreSQL 16, Redis 7 and BullMQ (`backend/`) |
-| **Console** | Next.js, React 19, TanStack Query (`frontend/`) |
-| **Agent** | Go 1.23, one static binary per OS and arch (`agent/`) |
-| **Delivery** | Docker Compose, Kubernetes (Kustomize), GitHub Actions, Prometheus and Grafana |
+| **Backend** | NestJS 11, Prisma 6, PostgreSQL 16, Redis 7, BullMQ (`backend/`) |
+| **Console** | Next.js 15, React 19, Tailwind, TanStack Query (`frontend/`) |
+| **Agent** | Go 1.23, one static binary per OS/arch (`agent/`) |
+| **AI** | Claude (`@anthropic-ai/sdk`, `claude-opus-5`) — optional |
+| **Delivery** | Docker Compose, Kubernetes (Kustomize), GitHub Actions, Nginx, Prometheus, Grafana |
+
+> **Status:** working demo, verified module-by-module. Not yet hardened for production or
+> tested as a full three-tier live run. See [Known issues & pending tasks](#known-issues--pending-tasks)
+> before any real deployment — the Workforce module in particular requires HR/legal consent.
 
 ---
 
 ## Contents
 
-- [Features](#features)
+- [Project overview](#project-overview)
+- [Features & modules](#features--modules)
 - [Architecture](#architecture)
-- [Quick start](#quick-start)
-- [Demo accounts](#demo-accounts)
-- [Repository layout](#repository-layout)
-- [Development](#development)
-- [Documentation](#documentation)
-- [Security](#security)
+- [Tech stack](#tech-stack)
+- [Installation & setup](#installation--setup)
+- [Environment variables](#environment-variables)
+- [Database migrations & seed](#database-migrations--seed)
+- [Demo login credentials](#demo-login-credentials)
+- [Folder structure](#folder-structure)
+- [API overview](#api-overview)
+- [Deployment guide](#deployment-guide)
+- [Known issues & pending tasks](#known-issues--pending-tasks)
+- [Roadmap](#roadmap)
 - [License](#license)
 
 ---
 
-## Features
+## Project overview
+
+SecureEndpoint Manager is a single console for security, IT and HR teams to:
+
+- **Prove compliance** — score every managed device against a policy (encryption, AV/EDR,
+  firewall, USB, patches, screen lock, approved software) and see fleet-wide posture live.
+- **Enforce policy on the endpoint** — the Go agent applies USB blocking, software
+  blacklisting, screen-lock and update settings, and runs remote commands.
+- **Detect & alert** — a rule engine raises deduplicated alerts, delivered through your
+  channels, with a hash-chained audit log you can verify.
+- **Track work (optional)** — attendance, productivity and tasks per employee, with a
+  privacy-preserving agent and AI-generated daily summaries.
+
+Two agents in one binary: the **service** (SYSTEM/root) handles security telemetry and
+enforcement; a **per-user helper** handles workforce activity in the signed-in session.
+
+---
+
+## Features & modules
 
 ### Core policy requirements
 
-| # | Requirement | Policy setting (`DevicePolicy`) | Enforcement (agent) | Detection (compliance rule) | Management (API / console) |
-|---|---|---|---|---|---|
-| 1 | Company data only on company-managed devices | `companyDataOnlyManaged` | Enrollment required; `isCompanyOwned` flag | `NOT_COMPANY_DEVICE` (CRITICAL) | `/devices`, `/enrollment`, device quarantine |
-| 2 | USB mass storage blocked, with whitelisting and temporary access | `usbStorageBlocked`, `allowWhitelistedUsb`, `usbReadOnly` | Blocks storage-class devices, reports `BLOCKED`/`ALLOWED`/file events, applies whitelist with expiry | `USB_STORAGE_ENABLED` (HIGH) | `/usb/devices`, `/usb/events`, `/usb/requests` (approve, deny, revoke) |
-| 3 | Only approved software | `blockUnauthorizedSoftware`, `autoUninstallBlacklisted` | Inventory, software events, `UNINSTALL_SOFTWARE` command | `UNAUTHORIZED_SOFTWARE` (HIGH) | `/software/whitelist`, `/software/blacklist`, `/software/unauthorized`, `/software/uninstall`, `/software/licenses` |
-| 4 | Antivirus and EDR mandatory | `requireAntivirus`, `requireEdr`, `maxAvSignatureAgeDays` | Reports AV/EDR state and signature age | `ANTIVIRUS_MISSING` (CRITICAL), `ANTIVIRUS_OUTDATED`, `EDR_MISSING` (HIGH) | `/security/overview`, `/security/devices` |
-| 5 | Full-disk encryption | `requireDiskEncryption` | BitLocker, FileVault and LUKS detection; `ENABLE_ENCRYPTION` command | `DISK_ENCRYPTION_DISABLED` (CRITICAL) | `/security/*`, device commands |
-| 6 | Host firewall enabled | `requireFirewall` | Reports firewall state | `FIREWALL_DISABLED` (HIGH) | `/security/*` |
-| 7 | Automatic updates and timely patching | `autoUpdateEnabled`, `autoPatchDeployment`, `patchDeadlineDays`, `maintenanceWindow` | Reports patches and CVEs; `INSTALL_PATCHES` command | `AUTO_UPDATE_DISABLED`, `CRITICAL_PATCHES_MISSING` (HIGH) | `/patches`, `/patches/vulnerabilities`, `/patches/deploy` |
-| 8 | Screen lock and password on wake | `screenLockEnabled`, `screenLockTimeoutSec`, `requirePasswordOnWake`, `screenSaverEnforced` | Enforces and reports lock settings; `LOCK_SCREEN` command | `SCREEN_LOCK_DISABLED` (MEDIUM) | policy editor |
-| 9 | Continuous monitoring, alerting and audit | `checkinIntervalSec`, `inventoryIntervalSec` | Heartbeat and state reports | `AGENT_OFFLINE`, `SECURE_BOOT_DISABLED` | `/alerts`, `/audit` (hash chain, `/audit/verify`), `/reports`, Prometheus alerts |
-
-The rule conditions, weights and scoring are in [docs/COMPLIANCE-ENGINE.md](docs/COMPLIANCE-ENGINE.md).
+| # | Requirement | Where |
+|---|---|---|
+| 1 | Company data only on company-managed devices | enrolment, `NOT_COMPANY_DEVICE` rule |
+| 2 | Block USB mass storage (whitelist + temporary access) | USB Control module + agent enforcement |
+| 3 | Only approved software (discover, block, force-uninstall, licences) | Software module |
+| 4 | Antivirus + EDR mandatory | Endpoint Security module |
+| 5 | Full-disk encryption (BitLocker / FileVault / LUKS) | Endpoint Security |
+| 6 | Host firewall enabled | Endpoint Security |
+| 7 | Automatic OS/app updates & timely patching | Patch module |
+| 8 | Screen lock + password on wake | policy + agent enforcement |
+| 9 | Continuous monitoring, alerting & audit | Alerts + Audit + Reports |
 
 ### Modules
 
-| # | Module | What it does | Backend (`/api/v1`) | Agent |
-|---|---|---|---|---|
-| 1 | **Dashboard** | Fleet KPIs, compliance trend, top violations, department compliance, recent alerts | `/dashboard/*` | – |
-| 2 | **Device inventory & assets** | Hardware and OS inventory, assignment history, warranty, tags, quarantine, remote commands | `/devices` | hardware collector, command runner |
-| 3 | **Enrollment & agent management** | Scoped enrollment tokens, install one-liners, approval queue, device certificates from an internal CA | `/enrollment`, `/agent/enroll` | installer, CSR/keypair, service |
-| 4 | **Policy management** | Versioned policies; resolution order device → department → default; push via `APPLY_POLICY` | `/policies` | policy enforcer |
-| 5 | **Compliance engine** | 13 built-in weighted rules, score 0–100, state and risk level, re-evaluation queue | `/compliance` | – (server side) |
-| 6 | **Software management** | Inventory, whitelist and blacklist (exact, contains, regex), license compliance, remote uninstall | `/software` | software inventory, uninstaller |
-| 7 | **USB device control** | Block storage, device whitelist (global, department, user, device), temporary access workflow, event log | `/usb` | USB monitor and blocker |
-| 8 | **Endpoint security posture** | AV, EDR, firewall, encryption, secure boot, TPM, screen lock | `/security` | posture collectors |
-| 9 | **Patch & vulnerability management** | Missing patches by severity, CVE and CVSS view, patch deployment | `/patches` | update agent |
-| 10 | **Alerts & notifications** | Deduplicated alerts, acknowledge and resolve, channels: email, SMS, WhatsApp, Slack, Teams, HMAC-signed webhook | `/alerts` | – |
-| 11 | **Audit trail** | Append-only, SHA-256 hash-chained audit log, login history, verification, CSV export | `/audit` | – |
-| 12 | **Reports & scheduling** | Compliance, device, software, security, audit, USB and patch reports in PDF, XLSX or CSV; cron schedules with email delivery | `/reports` | – |
-| – | **Identity & access** (cross-cutting) | Local, LDAP/AD, Entra ID and OIDC login; TOTP MFA; 7 roles with a permission matrix and row scoping; sessions; IP restrictions | `/auth`, `/users`, `/roles`, `/departments`, `/settings` | – |
+- **Device inventory & enrolment** — hardware/OS details, assignment, certificates, agent tokens.
+- **Compliance engine** — 13 built-in rules, weighted 0–100 score, risk level, history.
+- **USB control** — whitelist, temporary access requests/approvals, event log.
+- **Software** — inventory, unauthorized/blacklisted detection, catalog, licences, force-uninstall.
+- **Endpoint security** — AV, EDR, firewall, disk encryption, Secure Boot posture.
+- **Patch management** — missing/critical patches, CVEs, deploy.
+- **Alerting** — Email, SMS, WhatsApp (Twilio), Slack, Teams, generic webhook (HMAC-signed).
+- **Audit** — append-only, SHA-256 hash chain, `/audit/verify`, CSV export.
+- **Reporting** — Compliance / Device / Software / Security / Audit / USB / Patch → PDF, Excel, CSV.
+- **Dashboard** — fleet KPIs, compliance trend, risk & platform breakdowns, top violations.
+- **Workforce (optional)** — live board, attendance + monthly sheet + export, app/website
+  productivity tracking, tasks & timers (allocated vs actual), structured daily reports,
+  analytics, opt-in screenshots, and **AI work intelligence** (per-employee & management summaries).
 
-The complete API contract is in [docs/API.md](docs/API.md).
+### Authentication & access
+
+RBAC with 8 roles (Super Admin, Security Admin, Compliance Officer, IT Admin, Department
+Manager, Employee, Auditor, HR Manager), local login, LDAP/Active Directory, Azure AD &
+generic OIDC SSO, TOTP MFA + recovery codes, rotating refresh tokens with reuse detection,
+session management, IP restrictions.
 
 ---
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph EP["Endpoints"]
-        A1["sem-agent<br/>Windows / Linux / macOS"]
-    end
-    subgraph Edge
-        N["Nginx or ingress-nginx<br/>TLS, HSTS, rate limits,<br/>optional mTLS, /downloads"]
-    end
-    subgraph App
-        FE["frontend<br/>Next.js :3000"]
-        API["backend api<br/>NestJS :4000"]
-        WK["backend worker<br/>BullMQ"]
-    end
-    subgraph Data
-        PG[("PostgreSQL 16")]
-        RD[("Redis 7")]
-        FS[("/data<br/>reports + CA")]
-    end
-    B(("Browser")) --> N
-    A1 -->|"HTTPS /api/v1/agent"| N
-    N -->|"/"| FE
-    N -->|"/api"| API
-    FE --> API
-    API --> PG & RD & FS
-    WK --> PG & RD & FS
-    WK -->|"email / SMS / WhatsApp /<br/>Slack / Teams / webhook"| EXT["Notification providers"]
-    API -->|"LDAP / Entra ID / OIDC"| IDP["Identity providers"]
-    PR["Prometheus + Grafana"] -.->|/metrics| API & WK
+```
+                         ┌──────────────── Nginx (TLS, rate limits, headers) ────────────────┐
+   Browser ──HTTPS──────►│  /            → Next.js console (frontend)                          │
+                         │  /api/v1      → NestJS API (backend)                                │
+   Endpoints ──HTTPS────►│  /api/v1/agent→ NestJS API (agent protocol, optional mTLS)          │
+                         │  /downloads   → agent binaries + browser extension                  │
+                         └───────────────────────────────────────────────────────────────────┘
+                                   │                    │                    │
+                            ┌──────▼──────┐      ┌──────▼──────┐      ┌──────▼──────┐
+                            │  API (web)  │      │   Worker    │      │  PostgreSQL │
+                            │  NestJS     │      │  BullMQ     │◄────►│   Redis     │
+                            └─────────────┘      └─────────────┘      └─────────────┘
+                                   ▲  compliance eval · alerts · reports · nightly close · AI batch
+                                   │
+   ┌───────────────────────────────┴──────────────── Endpoint (Go agent) ───────────────────┐
+   │  service (SYSTEM/root): inventory, security posture, USB/software enforcement, commands  │
+   │  user-helper (session): activity, app/website (browser ext), opt-in blurred screenshots │
+   └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Agents send heartbeats and full state reports. The api stores inventory and posture, classifies software and evaluates compliance. Bulk evaluations, alert delivery, report generation and maintenance run on the worker through BullMQ. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for sequence diagrams (enrollment, check-in, evaluation, USB approval, reports), the module map and the data model.
+Detailed diagrams and sequence flows: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
-## Quick start
+## Tech stack
 
-You need Docker with Compose v2, plus `bash` and `openssl`. On Windows, use Git Bash or WSL, or the PowerShell secrets script.
+**Frontend:** Next.js 15 (App Router, standalone), React 19, TypeScript, Tailwind CSS,
+Radix UI + shadcn-style components, TanStack Query & Table, Recharts, react-hook-form + Zod.
 
-```bash
-git clone https://github.com/<org>/secureendpoint-manager.git && cd secureendpoint-manager
-./scripts/generate-secrets.sh           # Windows: .\scripts\generate-secrets.ps1
-./scripts/gen-self-signed-cert.sh       # local TLS certificate for https://localhost
-docker compose up -d --build            # first build takes a few minutes
-docker compose ps                       # wait until backend, frontend and nginx are healthy
-```
+**Backend:** NestJS 11, Prisma 6, PostgreSQL 16, Redis 7, BullMQ, Passport/JWT, argon2,
+otplib, `@anthropic-ai/sdk`, PDFKit, ExcelJS, prom-client, Swagger.
 
-Open **https://localhost** and accept the self-signed certificate warning. Log in with:
+**Agent:** Go 1.23 (`CGO_ENABLED=0`), `kardianos/service`, WMI/GDI (Windows), `go-winio` (IPC).
 
-| | |
-|---|---|
-| Email | `admin@secureendpoint.local` |
-| Password | `ChangeMe!Secure2026` |
-
-Useful extras:
-
-```bash
-docker compose --profile monitoring up -d                          # Prometheus, Alertmanager, Grafana (http://127.0.0.1:3001)
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d  # + Mailpit (http://127.0.0.1:8025), DB/Redis on localhost
-docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile ldap up -d   # + OpenLDAP with sample users
-make help                                                          # all shortcuts
-```
-
-API docs (Swagger UI) are at **https://localhost/api/docs**. Agent binaries and install scripts are at **https://localhost/downloads/**.
-
-> The quick start is for evaluation only. For production, follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): real certificates, `SEED_DEMO_DATA=false`, a strong admin password, MFA, backups of `ENCRYPTION_KEY` and `/data/pki`.
+**Infra:** Docker & Docker Compose, Kubernetes (Kustomize), Nginx, Prometheus, Grafana,
+GitHub Actions (CI, CodeQL, release, deploy).
 
 ---
 
-## Demo accounts
+## Installation & setup
 
-When `SEED_DEMO_DATA=true` (the default in `.env.example`), the seed creates demo departments, policies and devices, plus one user per role. **All of them use the password `ChangeMe!Secure2026`.**
+**Prerequisites:** Docker with Compose v2, plus `bash` + `openssl` (Git Bash or WSL on Windows).
 
-| Email | Role | Typical use |
+```bash
+git clone https://github.com/sanjeevkumaraular01-png/device-compliance-platform.git
+cd device-compliance-platform
+
+./scripts/generate-secrets.sh        # Windows: .\scripts\generate-secrets.ps1  → writes .env with strong secrets
+./scripts/gen-self-signed-cert.sh    # local TLS cert for https://localhost
+
+docker compose up -d --build         # first build takes a few minutes
+docker compose ps                    # wait until backend, frontend, nginx are healthy
+```
+
+Open **https://localhost** and accept the self-signed certificate warning, then log in with the
+[demo credentials](#demo-login-credentials).
+
+Optional monitoring stack (Prometheus, Grafana, exporters):
+
+```bash
+docker compose --profile monitoring up -d      # Grafana on http://127.0.0.1:3001 (set GRAFANA_PORT to change)
+```
+
+### Local development (without Docker)
+
+```bash
+# Postgres + Redis for dev
+docker compose -f docker-compose.dev.yml up -d postgres redis
+
+# Backend
+cd backend && npm install && npx prisma migrate dev && npm run seed && npm run start:dev   # :4000
+
+# Frontend (new terminal)
+cd frontend && npm install && npm run dev                                                   # :3000
+```
+
+---
+
+## Environment variables
+
+Everything is configured via env vars; `.env.example` documents all ~73 of them with
+comments, and `docs/ENVIRONMENT.md` has the full reference. Generate a ready `.env` with
+`./scripts/generate-secrets.sh`. Key ones:
+
+| Variable | Required | Purpose |
 |---|---|---|
-| `admin@secureendpoint.local` | Super Admin | Everything, including roles and settings |
-| `secadmin@secureendpoint.local` | Security Admin | Policies, rules, alert channels, security settings |
-| `compliance@secureendpoint.local` | Compliance Officer | Compliance results, rules, reports, audit |
-| `itadmin@secureendpoint.local` | IT Admin | Devices, enrollment, software, USB, patches, users |
-| `manager@secureendpoint.local` | Department Manager | Own department's devices; approve USB requests |
-| `employee@secureendpoint.local` | Employee | Own devices; request USB access |
-| `auditor@secureendpoint.local` | Auditor | Read-only access including the audit trail |
+| `DATABASE_URL` | ✔ | PostgreSQL connection string |
+| `REDIS_URL` | ✔ | Redis connection (BullMQ + caches) |
+| `JWT_ACCESS_SECRET` | ✔ | JWT signing secret (≥ 32 chars) |
+| `ENCRYPTION_KEY` | ✔ | AES-256-GCM key, base64 of 32 bytes (encrypts MFA secrets, channel configs, licence keys, screenshots) |
+| `CORS_ORIGINS`, `WEB_URL`, `API_PUBLIC_URL` | ✔ | URLs / allowed origins |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | | first Super Admin |
+| `SEED_DEMO_DATA` | | seed demo devices/users/workforce data (`true` in dev, **`false` in prod**) |
+| `ANTHROPIC_API_KEY` | | enables AI work-intelligence summaries (off when unset) |
+| `AI_MODEL`, `AI_EFFORT`, `AI_DAILY_RUN_TIME` | | AI tuning (defaults `claude-opus-5`, `high`, `20:30`) |
+| `SMTP_*`, `TWILIO_*` | | email / SMS / WhatsApp alert delivery |
+| `LDAP_*`, `AZURE_AD_*`, `OIDC_*` | | directory & SSO login |
+| `SCREENSHOTS_DIR`, `WORKFORCE_TIMEZONE` | | workforce storage & timezone |
+| `POSTGRES_*`, `REDIS_PASSWORD`, `GRAFANA_*` | | Docker Compose infra credentials |
 
-MFA enrolment is enforced for Super Admin and Security Admin (`SECURITY_MFA_REQUIRED_ROLES`), so have an authenticator app ready. The full permission matrix is in [docs/API.md](docs/API.md#roles--permissions), and per-role walkthroughs are in [docs/USER-GUIDE.md](docs/USER-GUIDE.md).
+> Optional features degrade gracefully: with SSO/LDAP/SMTP/Twilio/AI unset, those features
+> are simply disabled (the login page even hides the Directory tab when LDAP is off).
 
 ---
 
-## Repository layout
+## Database migrations & seed
+
+Prisma owns the schema (`backend/prisma/schema.prisma`). In Docker the entrypoint runs
+migrations and the seed automatically (`RUN_MIGRATIONS`, `RUN_SEED`). Manually:
+
+```bash
+cd backend
+npx prisma migrate dev --name <name>    # create + apply a migration (dev)
+npx prisma migrate deploy               # apply committed migrations (prod/CI)
+npm run seed                            # idempotent seed (roles, policies, rules, catalog, demo data)
+npx prisma studio                       # inspect the DB in a browser
+```
+
+The seed is idempotent (safe to run repeatedly). Demo data (guarded by `SEED_DEMO_DATA`)
+adds ~60 devices, ~30+ employees, compliance history, USB/software/patch data, workforce
+sessions/tasks/reports and sample AI insights.
+
+---
+
+## Demo login credentials
+
+Available when `SEED_DEMO_DATA=true`. All use password **`ChangeMe!Secure2026`**, at
+`@secureendpoint.local`:
+
+| Role | Email |
+|---|---|
+| Super Admin | `admin@secureendpoint.local` |
+| Security Admin | `secadmin@secureendpoint.local` |
+| Compliance Officer | `compliance@secureendpoint.local` |
+| IT Admin | `itadmin@secureendpoint.local` |
+| Department Manager (Engineering) | `manager@secureendpoint.local` |
+| Employee | `employee@secureendpoint.local` |
+| Auditor | `auditor@secureendpoint.local` |
+| HR Manager (Workforce) | `hr@secureendpoint.local` |
+
+> Super Admin and Security Admin are prompted to set up MFA on first login. **Change the
+> admin password and disable demo data before production.**
+
+---
+
+## Folder structure
 
 ```
 .
-├── backend/                  NestJS API + worker, Prisma schema & migrations      (backend team)
-├── frontend/                 Next.js admin console                                 (frontend team)
-├── agent/                    Go endpoint agent, install scripts, agent-dist image  (agent team)
-├── deploy/
-│   ├── nginx/                nginx.conf, conf.d/secureendpoint.conf, snippets/, certs/README.md
-│   ├── prometheus/           prometheus.yml, alerts.yml, alertmanager.yml
-│   ├── grafana/              provisioning/ + dashboards/ (Compliance Overview, Platform Health)
-│   ├── k8s/                  Kustomize base, overlays (staging, production), optional postgres/redis
-│   └── dev/ldap/             OpenLDAP sample directory for development
-├── docs/                     API, architecture, deployment, security, runbook, user guide…
-├── scripts/                  generate-secrets.{sh,ps1}, gen-self-signed-cert.sh, validate-infra.sh, …
-├── .github/                  CI, CodeQL, release, deploy workflows; Dependabot; CODEOWNERS; PR template
-├── docker-compose.yml        production-like stack (profiles: monitoring, node-exporter)
-├── docker-compose.dev.yml    development override (exposed ports, Mailpit, OpenLDAP)
-├── .env.example              every configuration variable, documented
-└── Makefile                  up, down, dev, logs, build, test, seed, secrets, k8s-render, agent-dist, …
+├── backend/                 NestJS API + worker
+│   ├── prisma/              schema, migrations, seed
+│   └── src/                 auth, devices, compliance, usb, software, security, patches,
+│                            alerts, audit, reports, dashboard, agent, workforce, tasks,
+│                            daily-reports, ai, jobs, metrics, common, config …
+├── frontend/                Next.js console
+│   └── src/app, components, lib, types
+├── agent/                   Go endpoint agent
+│   ├── cmd/sem-agent/       CLI entry point
+│   ├── internal/            collector, security, usb, software, enforce, commands,
+│   │                        activity (workforce), ipc, api, pki, service …
+│   └── packaging/           installers (win/linux/macos) + browser-extension
+├── deploy/                  nginx, prometheus, grafana, k8s (Kustomize base + overlays)
+├── docs/                    API, ARCHITECTURE, DEPLOYMENT, SECURITY, WORKFORCE, RUNBOOK, …
+├── scripts/                 secret/cert generation, infra validation
+├── docker-compose.yml       production-like stack
+├── docker-compose.dev.yml   dev overrides (exposed DB/Redis, mail/LDAP test services)
+└── Makefile                 up, down, logs, dev, build, test, seed, secrets, k8s-render
 ```
 
 ---
 
-## Development
+## API overview
 
-| Task | Command |
+REST API under `/api/v1`, Swagger UI at `/api/docs`. Full contract in
+[`docs/API.md`](docs/API.md) and [`docs/WORKFORCE.md`](docs/WORKFORCE.md).
+
+| Area | Base path |
 |---|---|
-| Start the dev stack (DB and Redis on localhost, Mailpit, OpenLDAP) | `make dev` |
-| Backend hot reload against the dev DB | `cd backend && npm ci && npx prisma migrate dev && npm run start:dev` (with `DATABASE_URL=postgresql://sem:<POSTGRES_PASSWORD>@localhost:5432/secureendpoint`) |
-| Frontend hot reload | `cd frontend && npm ci && API_INTERNAL_URL=http://localhost:4000 npm run dev` |
-| Agent build and test | `cd agent && go test ./... && go build ./...` |
-| Run all tests and linters | `make test` |
-| Validate compose, nginx, Prometheus, k8s and workflows | `./scripts/validate-infra.sh` |
-| Render Kubernetes manifests | `make k8s-render OVERLAY=staging` |
+| Auth (login, LDAP, SSO, MFA, sessions, `/auth/methods`) | `/auth` |
+| Dashboard KPIs & trends | `/dashboard` |
+| Devices, enrolment, commands | `/devices`, `/enrollment` |
+| Policies & compliance | `/policies`, `/compliance` |
+| Software, USB, security, patches | `/software`, `/usb`, `/security`, `/patches` |
+| Alerts & channels | `/alerts` |
+| Audit & reports | `/audit`, `/reports` |
+| Users, roles, departments, settings | `/users`, `/roles`, `/departments`, `/settings` |
+| Agent protocol | `/agent/*` (enroll, heartbeat, report, usb-events, activity, screenshots, …) |
+| Workforce, tasks, daily reports, AI | `/workforce`, `/tasks`, `/daily-reports`, `/ai` |
 
-CI (`.github/workflows/ci.yml`) runs the lint, unit, e2e and build jobs for all three components, a multi-OS Go test matrix with cross-compilation, Docker builds, infrastructure validation, Trivy, npm audit, govulncheck and gosec. CodeQL runs separately. Tags `v*` trigger `release.yml`: multi-arch GHCR images with SBOM and provenance, cosign keyless signatures, a Trivy CRITICAL gate, and a GitHub Release with the agent binaries. `deploy.yml` deploys a signed tag to staging or production, with approvals and automatic rollback.
+Console users authenticate with `Authorization: Bearer <JWT>`; agents use a hashed agent
+token plus `X-Device-Id`. Prometheus metrics are scraped internally at `backend:4000/metrics`.
 
 ---
 
-## Documentation
+## Deployment guide
 
-| Document | Contents |
-|---|---|
-| [docs/API.md](docs/API.md) | REST API contract, RBAC matrix, agent protocol |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, data flow, sequence diagrams, module map, ER model, scaling |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment guide: sizing, TLS, Compose, Kubernetes, SSO, alert channels, agent rollout, backups, upgrades, monitoring |
-| [docs/SECURITY.md](docs/SECURITY.md) | Security architecture, controls, threat model, compliance mapping, vulnerability disclosure |
-| [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) | Every environment variable |
-| [docs/COMPLIANCE-ENGINE.md](docs/COMPLIANCE-ENGINE.md) | Rules, scoring, states, risk, alerting, tuning |
-| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Operational procedures and incident response |
-| [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | Per-role guide and walkthroughs |
-| [deploy/k8s/README.md](deploy/k8s/README.md) | Kustomize layout and image expectations |
-| [deploy/nginx/certs/README.md](deploy/nginx/certs/README.md) | TLS certificates and Let's Encrypt |
+Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Summary:
+
+**Docker Compose (single host):** point DNS at the host, drop real TLS certs in
+`deploy/nginx/certs/` (or use Let's Encrypt), set production values in `.env`
+(`SEED_DEMO_DATA=false`, strong `SEED_ADMIN_PASSWORD`, real SMTP/SSO), then
+`docker compose up -d`. Services run api + worker separately (`APP_ROLE`), with health checks
+and a shared `/data` volume for reports, the device CA and screenshots.
+
+**Kubernetes:** `deploy/k8s/` is Kustomize with `base/` + `overlays/staging|production`
+(Deployments with HPA/PDB, hardened securityContext, Ingress with cert-manager,
+NetworkPolicies, a migration Job, RWX PVC, ServiceMonitor/PrometheusRule). Use a **managed**
+PostgreSQL and Redis in production. Render with `kubectl kustomize deploy/k8s/overlays/production`.
+
+**CI/CD:** GitHub Actions in `.github/workflows/` — `ci` (lint/test/build all three parts +
+Trivy), `codeql`, `release` (multi-arch images to GHCR, SBOM, cosign), `deploy`
+(environment-gated kubectl apply + smoke test + rollback).
+
+**First-login hardening:** rotate the admin password, enable MFA, configure IP restrictions,
+set up SSO/LDAP, replace the self-signed cert. See `docs/SECURITY.md` and `docs/RUNBOOK.md`.
 
 ---
 
-## Security
+## Known issues & pending tasks
 
-Report vulnerabilities privately as described in [docs/SECURITY.md](docs/SECURITY.md#vulnerability-disclosure-policy). Do not open public issues for them.
+- **Not a full live integration test yet.** Each part passes its own tests (backend 152 unit
+  + 17 e2e, agent tests on 3 OSes, frontend build), and the demo runs end-to-end in the
+  browser, but a full scripted three-tier run is still pending.
+- **Still demo-grade security out of the box:** self-signed cert, default admin password,
+  MFA not enforced, demo data on. Harden before production.
+- **AI features need an `ANTHROPIC_API_KEY`.** Until set, AI summaries are disabled (rest works).
+- **Workforce "live" data needs a real agent** on at least one PC; demo data shows history only.
+- **Screenshot blur is trusted from the agent** — the server cannot re-verify an image is blurred.
+- **Long-running task timers are not auto-closed at midnight;** no holiday calendar yet.
+- **Employee monitoring rollout requires HR/legal consent** (e.g. India's DPDP Act, GDPR).
+  Deploy the Workforce agent only on company-owned devices with written notice/consent.
+- The `main` history was rewritten once pre-first-push to scrub a placeholder Slack webhook
+  from the seed; if you cloned an earlier state, re-clone.
+
+---
+
+## Roadmap
+
+- [ ] Full three-tier live integration + end-to-end test suite in CI
+- [ ] Production hardening pass (secrets, TLS, MFA enforcement, image scanning gates)
+- [ ] MSI / signed installers for mass Windows rollout (GPO / Intune / SCCM)
+- [ ] Agent auto-update channel
+- [ ] Live remote-command console (WebSocket) and real-time device shell
+- [ ] Server-side screenshot blur verification + configurable redaction zones
+- [ ] Holiday calendar, shift schedules and leave workflow for attendance
+- [ ] HRMS/payroll connectors (beyond the generic webhook)
+- [ ] Vulnerability feed enrichment (CVE → CVSS/EPSS) and patch SLAs
+- [ ] Multi-tenancy for MSP / multi-company deployments
+- [ ] S3-compatible object storage for reports & screenshots
+
+---
 
 ## License
 
-Proprietary. See [LICENSE](LICENSE).
+Proprietary — see [`LICENSE`](LICENSE). Internal/authorized use only.
+
+---
+
+Built with [Claude Code](https://claude.com/claude-code).
