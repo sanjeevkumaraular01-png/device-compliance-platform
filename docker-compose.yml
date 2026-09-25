@@ -88,6 +88,7 @@ x-backend-env: &backend-env
   SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@secureendpoint.local}
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe!Secure2026}
   SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+  DEMO_ACTIVITY: ${DEMO_ACTIVITY:-}
 
 x-node-healthcheck: &node-healthcheck
   test:

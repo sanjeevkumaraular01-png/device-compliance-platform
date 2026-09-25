@@ -216,7 +216,7 @@ export function DataTable<T>({
             {columnToggle && hideableColumns.length > 1 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" aria-label="Show or hide columns">
                     <Columns3 /> <span className="hidden sm:inline">Columns</span>
                   </Button>
                 </DropdownMenuTrigger>

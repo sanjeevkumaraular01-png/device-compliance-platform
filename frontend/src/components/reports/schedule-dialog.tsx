@@ -120,6 +120,7 @@ function ScheduleForm({ onDone }: { onDone: () => void }) {
               type="button"
               role="radio"
               aria-checked={preset === p.id}
+              aria-label={`${p.label}: ${p.description}`}
               onClick={() => setPreset(p.id)}
               className={cn(
                 "rounded-md border bg-card px-2.5 py-2 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

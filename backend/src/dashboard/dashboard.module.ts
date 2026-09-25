@@ -17,6 +17,9 @@ export class LimitQueryDto {
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
+/** Compliance rate (%) over devices with a known state; 0 when none have been evaluated. */
+const complianceRate = (compliant: number, nonCompliant: number) =>
+  compliant + nonCompliant ? round1((compliant / (compliant + nonCompliant)) * 100) : 0;
 
 @Injectable()
 export class DashboardService {
@@ -39,7 +42,7 @@ export class DashboardService {
       this.prisma.device.count({ where: dev({ complianceState: 'COMPLIANT' }) }),
       this.prisma.device.count({ where: dev({ complianceState: 'NON_COMPLIANT' }) }),
       this.prisma.device.count({ where: dev({ complianceState: 'UNKNOWN' }) }),
-      this.prisma.device.aggregate({ where: dev({ lastEvaluatedAt: { not: null } }), _avg: { complianceScore: true } }),
+      this.prisma.device.aggregate({ where: dev({ complianceState: { not: 'UNKNOWN' } }), _avg: { complianceScore: true } }),
       this.prisma.device.count({ where: dev({ riskLevel: 'CRITICAL' }) }),
       this.prisma.device.count({ where: dev({ riskLevel: 'HIGH' }) }),
       this.prisma.usbEvent.count({ where: { eventType: 'BLOCKED', occurredAt: { gte: new Date(now - 86_400_000) }, device: base } }),
@@ -84,7 +87,9 @@ export class DashboardService {
       compliantDevices: compliant,
       nonCompliantDevices: nonCompliant,
       unknownDevices: unknown,
-      complianceRate: totalDevices ? round1((compliant / totalDevices) * 100) : 0,
+      // Of devices with a known state; not-yet-evaluated devices are reported separately
+      // (unknownDevices). Same basis as the compliance trend, so today's point matches.
+      complianceRate: complianceRate(compliant, nonCompliant),
       averageScore: round1(avg._avg.complianceScore ?? 0),
       criticalRisks: critical,
       highRisks: high,
@@ -145,8 +150,9 @@ export class DashboardService {
         ) x
       )
       SELECT to_char(dy.day, 'YYYY-MM-DD') AS day,
-             (count(s.state) FILTER (WHERE s.state = 'COMPLIANT') * 100.0 / NULLIF(count(s.state), 0))::float8 AS rate,
-             avg(s.score)::float8 AS avg
+             (count(s.state) FILTER (WHERE s.state = 'COMPLIANT') * 100.0
+               / NULLIF(count(s.state) FILTER (WHERE s.state IN ('COMPLIANT', 'NON_COMPLIANT')), 0))::float8 AS rate,
+             avg(s.score) FILTER (WHERE s.state IN ('COMPLIANT', 'NON_COMPLIANT'))::float8 AS avg
       FROM days dy LEFT JOIN snap s ON s.day = dy.day
       GROUP BY dy.day ORDER BY dy.day`;
     return rows.map((r) => ({ date: r.day, complianceRate: round1(r.rate ?? 0), averageScore: round1(r.avg ?? 0) }));
@@ -188,13 +194,14 @@ export class DashboardService {
     return depts.map((d) => {
       const g = groups.filter((x) => x.departmentId === d.id);
       const total = g.reduce((n, x) => n + x._count._all, 0);
-      const compliant = g.filter((x) => x.complianceState === 'COMPLIANT').reduce((n, x) => n + x._count._all, 0);
+      const count = (state: string) => g.filter((x) => x.complianceState === state).reduce((n, x) => n + x._count._all, 0);
+      const compliant = count('COMPLIANT');
       return {
         departmentId: d.id,
         departmentName: d.name,
         total,
         compliant,
-        complianceRate: total ? round1((compliant / total) * 100) : 0,
+        complianceRate: complianceRate(compliant, count('NON_COMPLIANT')),
       };
     });
   }

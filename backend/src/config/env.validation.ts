@@ -91,6 +91,8 @@ export const envValidationSchema = Joi.object({
   SEED_ADMIN_EMAIL: Joi.string().email({ tlds: false }).default('admin@secureendpoint.local'),
   SEED_ADMIN_PASSWORD: Joi.string().default('ChangeMe!Secure2026'),
   SEED_DEMO_DATA: bool(true),
+  // Defaults to SEED_DEMO_DATA (resolved in AppConfigService), so no Joi default here.
+  DEMO_ACTIVITY: Joi.boolean().truthy('true').falsy('false').allow(''),
   RUN_MIGRATIONS: bool(true),
   RUN_SEED: bool(true),
 });

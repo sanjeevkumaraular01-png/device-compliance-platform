@@ -25,6 +25,8 @@ export function ReportTypePicker({ value, onChange, compact }: { value: ReportTy
             type="button"
             role="radio"
             aria-checked={active}
+            aria-label={m.label}
+            aria-describedby={compact ? undefined : `report-type-desc-${t}`}
             onClick={() => onChange(t)}
             className={cn(
               "flex min-w-0 items-start gap-2.5 rounded-md border bg-card p-2.5 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -36,7 +38,11 @@ export function ReportTypePicker({ value, onChange, compact }: { value: ReportTy
             </span>
             <span className="min-w-0">
               <span className="block text-sm font-medium leading-tight">{m.label}</span>
-              {!compact && <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{m.description}</span>}
+              {!compact && (
+                <span id={`report-type-desc-${t}`} className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                  {m.description}
+                </span>
+              )}
             </span>
           </button>
         );

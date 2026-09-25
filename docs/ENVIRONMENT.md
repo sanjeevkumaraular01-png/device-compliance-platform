@@ -75,6 +75,7 @@ openssl rand -hex 24      # URL-safe passwords (Postgres, Redis, Grafana)
 | `SEED_ADMIN_EMAIL` | no | `admin@secureendpoint.local` | | api (seed) | Email of the initial SUPER_ADMIN account, created only if it does not exist. |
 | `SEED_ADMIN_PASSWORD` | no | `ChangeMe!Secure2026` | S | api (seed) | Initial password. **Change it at first login**, or set a strong value before the first start. |
 | `SEED_DEMO_DATA` | no | `true` (compose), `false` (k8s) | | api (seed) | Creates demo departments, policies, devices and one user per role (`secadmin@`, `compliance@`, `itadmin@`, `manager@`, `employee@`, `auditor@` at `secureendpoint.local`, same password as the admin). **Set it to `false` in production.** |
+| `DEMO_ACTIVITY` | no | same as `SEED_DEMO_DATA` | | worker | Demo installs only: every 5 minutes, refreshes the last check-in of ~85% of the **seeded** demo devices so the dashboard does not drift to "0 online" and demo devices do not start failing `AGENT_OFFLINE`. Devices enrolled by a real agent are never touched. Set `false` to watch demo devices go offline. |
 
 ## 6. Email (SMTP)
 

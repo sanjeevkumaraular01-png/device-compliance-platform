@@ -8,9 +8,11 @@ import { ComplianceService } from '../compliance/compliance.service';
 import { SettingsService } from '../settings/settings.service';
 import { ReportsService } from '../reports/reports.service';
 import { QUEUE_MAINTENANCE } from '../queues/queues';
+import { AppConfigService } from '../config/app-config.service';
 
 /** Repeating maintenance jobs (BullMQ job schedulers, safe with multiple workers). */
-const SCHEDULES: { key: string; pattern?: string; every?: number }[] = [
+type Schedule = { key: string; pattern?: string; every?: number };
+const SCHEDULES: Schedule[] = [
   { key: 'mark-offline', every: 5 * 60_000 },
   { key: 'usb-expire', every: 5 * 60_000 },
   { key: 'commands-expire', every: 5 * 60_000 },
@@ -19,22 +21,31 @@ const SCHEDULES: { key: string; pattern?: string; every?: number }[] = [
   { key: 'reports-purge', pattern: '30 3 * * *' },
 ];
 
+/** Demo installs only: see MaintenanceProcessor.demoActivity. */
+const DEMO_ACTIVITY: Schedule = { key: 'demo-activity', every: 5 * 60_000 };
+
 @Injectable()
 export class JobsScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(JobsScheduler.name);
 
-  constructor(@InjectQueue(QUEUE_MAINTENANCE) private readonly queue: Queue) {}
+  constructor(
+    @InjectQueue(QUEUE_MAINTENANCE) private readonly queue: Queue,
+    private readonly config: AppConfigService,
+  ) {}
 
   async onApplicationBootstrap() {
     if (process.env.NODE_ENV === 'test') return;
-    for (const s of SCHEDULES) {
+    const schedules = this.config.demoActivity ? [...SCHEDULES, DEMO_ACTIVITY] : SCHEDULES;
+    for (const s of schedules) {
       await this.queue.upsertJobScheduler(
         s.key,
         s.pattern ? { pattern: s.pattern, tz: 'UTC' } : { every: s.every! },
         { name: s.key, data: {}, opts: { removeOnComplete: 50, removeOnFail: 100 } },
       );
     }
-    this.logger.log(`Registered ${SCHEDULES.length} maintenance schedules`);
+    // Turning demo mode off must stop the simulated check-ins.
+    if (!this.config.demoActivity) await this.queue.removeJobScheduler(DEMO_ACTIVITY.key);
+    this.logger.log(`Registered ${schedules.length} maintenance schedules${this.config.demoActivity ? ' (demo activity on)' : ''}`);
   }
 }
 
@@ -69,6 +80,8 @@ export class MaintenanceProcessor extends WorkerHost {
         const days = (await this.settings.get<number>('reportRetentionDays')) ?? 30;
         return { purged: await this.reports.purgeOld(days) };
       }
+      case DEMO_ACTIVITY.key:
+        return this.demoActivity();
       default:
         return null;
     }
@@ -99,6 +112,25 @@ export class MaintenanceProcessor extends WorkerHost {
       });
     }
     return { inactive: stale.length };
+  }
+
+  /**
+   * Demo installs have no real agents, so seeded devices would all drift "offline"
+   * within minutes and, after a week, fail AGENT_OFFLINE. Refresh lastSeenAt for a
+   * stable ~85% of ACTIVE seeded devices (the rest stay offline, as in a real fleet).
+   * Only rows written by the seed (security_status.raw.collector = 'seed') are touched,
+   * never devices enrolled by a real agent.
+   */
+  async demoActivity() {
+    const touched = await this.prisma.$executeRaw`
+      UPDATE devices d
+      SET last_seen_at = now() - (random() * interval '4 minutes')
+      FROM security_status s
+      WHERE s.device_id = d.id
+        AND s.raw ->> 'collector' = 'seed'
+        AND d.status = 'ACTIVE'
+        AND ('x' || substr(md5(d.id::text), 1, 8))::bit(32)::int % 100 < 85`;
+    return { demoDevicesRefreshed: touched };
   }
 
   async expireCommands() {

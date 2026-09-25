@@ -119,7 +119,7 @@ and the console redirects to `/settings/security`.
 ```ts
 {
   totalDevices: number; compliantDevices: number; nonCompliantDevices: number; unknownDevices: number;
-  complianceRate: number;            // 0-100, 1 decimal
+  complianceRate: number;            // 0-100, 1 decimal: compliant / (compliant + nonCompliant); unknown devices excluded (same basis as compliance-trend and department-compliance)
   averageScore: number;              // 0-100
   criticalRisks: number;             // devices with riskLevel CRITICAL
   highRisks: number;

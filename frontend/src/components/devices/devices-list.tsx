@@ -323,7 +323,7 @@ export function DevicesList() {
           </>
         }
         actions={
-          <Button variant="outline" size="sm" onClick={exportCsv}>
+          <Button variant="outline" size="sm" onClick={exportCsv} aria-label="Export this page as CSV">
             <Download /> <span className="hidden sm:inline">Export CSV</span>
           </Button>
         }

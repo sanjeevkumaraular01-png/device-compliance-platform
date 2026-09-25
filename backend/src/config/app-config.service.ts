@@ -151,4 +151,6 @@ export class AppConfigService {
   get agentDownloadBaseUrl() {
     return this.str('AGENT_DOWNLOAD_BASE_URL', 'http://localhost/downloads').replace(/\/$/, '');
   }
+  /** Keep seeded demo devices "checking in" so a demo install does not go stale. */
+  get demoActivity() { return this.bool('DEMO_ACTIVITY', this.bool('SEED_DEMO_DATA', true)); }
 }
