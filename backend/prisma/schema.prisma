@@ -1,0 +1,938 @@
+// SecureEndpoint Manager — PostgreSQL schema (Prisma)
+// Table names are snake_case plural via @@map; columns snake_case via @map.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+enum RoleKey {
+  SUPER_ADMIN
+  SECURITY_ADMIN
+  COMPLIANCE_OFFICER
+  IT_ADMIN
+  DEPARTMENT_MANAGER
+  EMPLOYEE
+  AUDITOR
+}
+
+enum AuthProvider {
+  LOCAL
+  LDAP
+  ACTIVE_DIRECTORY
+  AZURE_AD
+  OIDC
+}
+
+enum DeviceType {
+  LAPTOP
+  DESKTOP
+  SERVER
+  VIRTUAL_MACHINE
+  WORKSTATION
+  OTHER
+}
+
+enum OsPlatform {
+  WINDOWS
+  LINUX
+  MACOS
+}
+
+enum DeviceStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  QUARANTINED
+  RETIRED
+}
+
+enum ComplianceState {
+  COMPLIANT
+  NON_COMPLIANT
+  UNKNOWN
+}
+
+enum RiskLevel {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum WarrantyStatus {
+  ACTIVE
+  EXPIRING
+  EXPIRED
+  UNKNOWN
+}
+
+enum ProtectionState {
+  ENABLED
+  DISABLED
+  NOT_INSTALLED
+  OUTDATED
+  UNKNOWN
+}
+
+enum SoftwareStatus {
+  APPROVED
+  UNAUTHORIZED
+  BLACKLISTED
+  UNKNOWN
+}
+
+enum MatchType {
+  EXACT
+  CONTAINS
+  REGEX
+}
+
+enum UsbDeviceClass {
+  MASS_STORAGE
+  HID
+  AUDIO
+  VIDEO
+  PRINTER
+  NETWORK
+  PHONE
+  OTHER
+}
+
+enum UsbEventType {
+  CONNECTED
+  DISCONNECTED
+  BLOCKED
+  ALLOWED
+  FILE_WRITE
+  FILE_READ
+}
+
+enum UsbAccessStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+  REVOKED
+}
+
+enum WhitelistScope {
+  GLOBAL
+  DEPARTMENT
+  USER
+  DEVICE
+}
+
+enum PatchCategory {
+  OS
+  SECURITY
+  APPLICATION
+  DRIVER
+  FEATURE
+}
+
+enum PatchSeverity {
+  CRITICAL
+  IMPORTANT
+  MODERATE
+  LOW
+  UNSPECIFIED
+}
+
+enum PatchState {
+  INSTALLED
+  MISSING
+  PENDING_INSTALL
+  FAILED
+}
+
+enum AlertSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum AlertCategory {
+  COMPLIANCE
+  USB
+  SOFTWARE
+  SECURITY
+  PATCH
+  AUTH
+  DEVICE
+  SYSTEM
+}
+
+enum AlertChannelType {
+  EMAIL
+  SMS
+  SLACK
+  TEAMS
+  WHATSAPP
+  WEBHOOK
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum AuditCategory {
+  USER_ACTION
+  DEVICE_CHANGE
+  POLICY_CHANGE
+  AUTH
+  USB
+  SOFTWARE
+  SECURITY
+  SYSTEM
+}
+
+enum ActorType {
+  USER
+  DEVICE
+  SYSTEM
+}
+
+enum ReportType {
+  COMPLIANCE
+  DEVICE
+  SOFTWARE
+  SECURITY
+  AUDIT
+  USB
+  PATCH
+}
+
+enum ReportFormat {
+  PDF
+  XLSX
+  CSV
+}
+
+enum ReportStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum CommandType {
+  UNINSTALL_SOFTWARE
+  INSTALL_PATCHES
+  APPLY_POLICY
+  COLLECT_INVENTORY
+  LOCK_SCREEN
+  RESTART
+  ENABLE_ENCRYPTION
+  REFRESH_USB_RULES
+}
+
+enum CommandStatus {
+  PENDING
+  SENT
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+// ─────────────────────────── Identity / RBAC ───────────────────────────
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         RoleKey  @unique
+  name        String
+  description String?
+  permissions String[]
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  users       User[]
+
+  @@map("roles")
+}
+
+model Department {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @unique
+  code        String        @unique
+  description String?
+  managerId   String?       @map("manager_id") @db.Uuid
+  manager     User?         @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
+  policyId    String?       @map("policy_id") @db.Uuid
+  policy      DevicePolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  users       User[]        @relation("DepartmentMembers")
+  devices     Device[]
+
+  @@map("departments")
+}
+
+model User {
+  id                String       @id @default(uuid()) @db.Uuid
+  email             String       @unique
+  displayName       String       @map("display_name")
+  passwordHash      String?      @map("password_hash")
+  authProvider      AuthProvider @default(LOCAL) @map("auth_provider")
+  externalId        String?      @map("external_id")
+  roleId            String       @map("role_id") @db.Uuid
+  role              Role         @relation(fields: [roleId], references: [id])
+  departmentId      String?      @map("department_id") @db.Uuid
+  department        Department?  @relation("DepartmentMembers", fields: [departmentId], references: [id], onDelete: SetNull)
+  jobTitle          String?      @map("job_title")
+  phone             String?
+  isActive          Boolean      @default(true) @map("is_active")
+  mfaEnabled        Boolean      @default(false) @map("mfa_enabled")
+  mfaSecretEnc      String?      @map("mfa_secret_enc") // AES-256-GCM encrypted TOTP secret
+  mfaRecoveryHashes String[]     @map("mfa_recovery_hashes")
+  failedLoginCount  Int          @default(0) @map("failed_login_count")
+  lockedUntil       DateTime?    @map("locked_until")
+  lastLoginAt       DateTime?    @map("last_login_at")
+  lastLoginIp       String?      @map("last_login_ip")
+  passwordChangedAt DateTime?    @map("password_changed_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  managedDepartments Department[]       @relation("DepartmentManager")
+  sessions           Session[]
+  loginHistory       LoginHistory[]
+  assignedDevices    Device[]           @relation("DeviceAssignedUser")
+  assignments        DeviceAssignment[] @relation("AssignmentUser")
+  assignmentsMade    DeviceAssignment[] @relation("AssignmentBy")
+  usbRequests        UsbAccessRequest[] @relation("UsbRequester")
+  usbDecisions       UsbAccessRequest[] @relation("UsbApprover")
+  reports            Report[]
+
+  @@unique([authProvider, externalId])
+  @@index([roleId])
+  @@index([departmentId])
+  @@map("users")
+}
+
+model Session {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash  String    @unique @map("refresh_token_hash")
+  // Hash of the token that was rotated out; presenting it again means the token leaked.
+  previousTokenHash String?   @map("previous_token_hash")
+  ipAddress         String?   @map("ip_address")
+  userAgent         String?   @map("user_agent")
+  mfaVerified       Boolean   @default(false) @map("mfa_verified")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  lastSeenAt        DateTime  @default(now()) @map("last_seen_at")
+  expiresAt         DateTime  @map("expires_at")
+  revokedAt         DateTime? @map("revoked_at")
+
+  @@index([userId])
+  @@index([previousTokenHash])
+  @@map("sessions")
+}
+
+model LoginHistory {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String?      @map("user_id") @db.Uuid
+  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email      String
+  provider   AuthProvider
+  success    Boolean
+  reason     String?
+  ipAddress  String?      @map("ip_address")
+  userAgent  String?      @map("user_agent")
+  mfaUsed    Boolean      @default(false) @map("mfa_used")
+  occurredAt DateTime     @default(now()) @map("occurred_at")
+
+  @@index([userId, occurredAt])
+  @@index([occurredAt])
+  @@map("login_history")
+}
+
+model IpRestriction {
+  id          String   @id @default(uuid()) @db.Uuid
+  cidr        String   @unique
+  description String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("ip_restrictions")
+}
+
+// ─────────────────────────────── Devices ───────────────────────────────
+
+model Device {
+  id                String          @id @default(uuid()) @db.Uuid
+  deviceName        String          @map("device_name")
+  hostname          String?
+  serialNumber      String          @unique @map("serial_number")
+  assetId           String          @unique @map("asset_id")
+  deviceType        DeviceType      @default(LAPTOP) @map("device_type")
+  platform          OsPlatform
+  manufacturer      String?
+  model             String?
+  cpu               String?
+  ramMb             Int?            @map("ram_mb")
+  storageGb         Int?            @map("storage_gb")
+  osName            String?         @map("os_name")
+  osVersion         String?         @map("os_version")
+  osBuild           String?         @map("os_build")
+  ipAddress         String?         @map("ip_address")
+  macAddresses      String[]        @map("mac_addresses")
+  assignedUserId    String?         @map("assigned_user_id") @db.Uuid
+  assignedUser      User?           @relation("DeviceAssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  departmentId      String?         @map("department_id") @db.Uuid
+  department        Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  policyId          String?         @map("policy_id") @db.Uuid
+  policy            DevicePolicy?   @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  purchaseDate      DateTime?       @map("purchase_date") @db.Date
+  warrantyExpiresAt DateTime?       @map("warranty_expires_at") @db.Date
+  warrantyStatus    WarrantyStatus  @default(UNKNOWN) @map("warranty_status")
+  status            DeviceStatus    @default(PENDING)
+  isCompanyOwned    Boolean         @default(true) @map("is_company_owned")
+  complianceState   ComplianceState @default(UNKNOWN) @map("compliance_state")
+  complianceScore   Int             @default(0) @map("compliance_score")
+  riskLevel         RiskLevel       @default(NONE) @map("risk_level")
+  lastEvaluatedAt   DateTime?       @map("last_evaluated_at")
+  agentVersion      String?         @map("agent_version")
+  agentTokenHash    String?         @unique @map("agent_token_hash")
+  lastSeenAt        DateTime?       @map("last_seen_at")
+  enrolledAt        DateTime?       @map("enrolled_at")
+  tags              String[]
+  notes             String?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  assignments       DeviceAssignment[]
+  certificates      DeviceCertificate[]
+  securityStatus    SecurityStatus?
+  software          SoftwareInventory[]
+  patches           PatchStatus[]
+  usbEvents         UsbEvent[]
+  usbRequests       UsbAccessRequest[]
+  complianceResults ComplianceResult[]
+  alerts            Alert[]
+  commands          DeviceCommand[]
+
+  @@index([platform])
+  @@index([complianceState])
+  @@index([riskLevel])
+  @@index([departmentId])
+  @@index([assignedUserId])
+  @@index([lastSeenAt])
+  @@map("devices")
+}
+
+model DeviceAssignment {
+  id           String    @id @default(uuid()) @db.Uuid
+  deviceId     String    @map("device_id") @db.Uuid
+  device       Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  userId       String    @map("user_id") @db.Uuid
+  user         User      @relation("AssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedById String?   @map("assigned_by_id") @db.Uuid
+  assignedBy   User?     @relation("AssignmentBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  assignedAt   DateTime  @default(now()) @map("assigned_at")
+  unassignedAt DateTime? @map("unassigned_at")
+  notes        String?
+
+  @@index([deviceId])
+  @@index([userId])
+  @@map("device_assignments")
+}
+
+model EnrollmentToken {
+  id           String      @id @default(uuid()) @db.Uuid
+  name         String
+  tokenHash    String      @unique @map("token_hash")
+  tokenPrefix  String      @map("token_prefix")
+  platform     OsPlatform?
+  departmentId String?     @map("department_id") @db.Uuid
+  policyId     String?     @map("policy_id") @db.Uuid
+  maxUses      Int         @default(100) @map("max_uses")
+  usedCount    Int         @default(0) @map("used_count")
+  autoApprove  Boolean     @default(true) @map("auto_approve")
+  expiresAt    DateTime    @map("expires_at")
+  revokedAt    DateTime?   @map("revoked_at")
+  createdById  String?     @map("created_by_id") @db.Uuid
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  @@map("enrollment_tokens")
+}
+
+model DeviceCertificate {
+  id           String    @id @default(uuid()) @db.Uuid
+  deviceId     String    @map("device_id") @db.Uuid
+  device       Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  serialNumber String    @unique @map("serial_number")
+  fingerprint  String    @unique // SHA-256 of DER
+  subject      String
+  pem          String
+  issuedAt     DateTime  @default(now()) @map("issued_at")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+
+  @@index([deviceId])
+  @@map("device_certificates")
+}
+
+// ─────────────────────────────── Policies ───────────────────────────────
+
+model DevicePolicy {
+  id                        String   @id @default(uuid()) @db.Uuid
+  name                      String   @unique
+  description               String?
+  isDefault                 Boolean  @default(false) @map("is_default")
+  priority                  Int      @default(100)
+  version                   Int      @default(1)
+  // Data access
+  companyDataOnlyManaged    Boolean  @default(true) @map("company_data_only_managed")
+  // USB
+  usbStorageBlocked         Boolean  @default(true) @map("usb_storage_blocked")
+  allowWhitelistedUsb       Boolean  @default(true) @map("allow_whitelisted_usb")
+  usbReadOnly               Boolean  @default(false) @map("usb_read_only")
+  // Software
+  blockUnauthorizedSoftware Boolean  @default(true) @map("block_unauthorized_software")
+  autoUninstallBlacklisted  Boolean  @default(false) @map("auto_uninstall_blacklisted")
+  // Endpoint protection
+  requireAntivirus          Boolean  @default(true) @map("require_antivirus")
+  requireEdr                Boolean  @default(true) @map("require_edr")
+  requireFirewall           Boolean  @default(true) @map("require_firewall")
+  requireDiskEncryption     Boolean  @default(true) @map("require_disk_encryption")
+  requireSecureBoot         Boolean  @default(false) @map("require_secure_boot")
+  maxAvSignatureAgeDays     Int      @default(3) @map("max_av_signature_age_days")
+  // Updates
+  autoUpdateEnabled         Boolean  @default(true) @map("auto_update_enabled")
+  autoPatchDeployment       Boolean  @default(true) @map("auto_patch_deployment")
+  patchDeadlineDays         Int      @default(14) @map("patch_deadline_days")
+  maintenanceWindow         String?  @map("maintenance_window") // cron expression
+  // Screen lock
+  screenLockEnabled         Boolean  @default(true) @map("screen_lock_enabled")
+  screenLockTimeoutSec      Int      @default(300) @map("screen_lock_timeout_sec")
+  requirePasswordOnWake     Boolean  @default(true) @map("require_password_on_wake")
+  screenSaverEnforced       Boolean  @default(true) @map("screen_saver_enforced")
+  // Agent
+  checkinIntervalSec        Int      @default(300) @map("checkin_interval_sec")
+  inventoryIntervalSec      Int      @default(3600) @map("inventory_interval_sec")
+  extraSettings             Json     @default("{}") @map("extra_settings")
+  createdById               String?  @map("created_by_id") @db.Uuid
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  devices     Device[]
+  departments Department[]
+
+  @@map("device_policies")
+}
+
+model ComplianceRule {
+  id               String       @id @default(uuid()) @db.Uuid
+  key              String       @unique // e.g. USB_STORAGE_ENABLED
+  name             String
+  description      String?
+  severity         RiskLevel
+  weight           Int // points deducted from 100 on failure
+  markNonCompliant Boolean      @default(true) @map("mark_non_compliant")
+  enabled          Boolean      @default(true)
+  platforms        OsPlatform[]
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@map("compliance_rules")
+}
+
+model ComplianceResult {
+  id            String          @id @default(uuid()) @db.Uuid
+  deviceId      String          @map("device_id") @db.Uuid
+  device        Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  policyId      String?         @map("policy_id") @db.Uuid
+  policyVersion Int?            @map("policy_version")
+  score         Int
+  state         ComplianceState
+  riskLevel     RiskLevel       @map("risk_level")
+  criticalCount Int             @default(0) @map("critical_count")
+  highCount     Int             @default(0) @map("high_count")
+  mediumCount   Int             @default(0) @map("medium_count")
+  lowCount      Int             @default(0) @map("low_count")
+  findings      Json // ComplianceFinding[]
+  evaluatedAt   DateTime        @default(now()) @map("evaluated_at")
+
+  @@index([deviceId, evaluatedAt])
+  @@index([evaluatedAt])
+  @@map("compliance_results")
+}
+
+// ─────────────────────────────── Software ───────────────────────────────
+
+model SoftwareWhitelist {
+  id               String      @id @default(uuid()) @db.Uuid
+  name             String
+  publisher        String?
+  matchType        MatchType   @default(CONTAINS) @map("match_type")
+  minVersion       String?     @map("min_version")
+  category         String?
+  platform         OsPlatform?
+  licenseType      String?     @map("license_type") // FREE, PER_SEAT, SITE, SUBSCRIPTION
+  licenseCount     Int?        @map("license_count")
+  licenseKeyEnc    String?     @map("license_key_enc")
+  licenseExpiresAt DateTime?   @map("license_expires_at")
+  costPerSeat      Decimal?    @map("cost_per_seat") @db.Decimal(12, 2)
+  vendorUrl        String?     @map("vendor_url")
+  notes            String?
+  approvedById     String?     @map("approved_by_id") @db.Uuid
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  @@unique([name, platform])
+  @@map("software_whitelist")
+}
+
+model SoftwareBlacklist {
+  id            String      @id @default(uuid()) @db.Uuid
+  name          String
+  publisher     String?
+  matchType     MatchType   @default(CONTAINS) @map("match_type")
+  platform      OsPlatform?
+  reason        String
+  severity      RiskLevel   @default(HIGH)
+  autoUninstall Boolean     @default(false) @map("auto_uninstall")
+  createdById   String?     @map("created_by_id") @db.Uuid
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@unique([name, platform])
+  @@map("software_blacklist")
+}
+
+model SoftwareInventory {
+  id              String         @id @default(uuid()) @db.Uuid
+  deviceId        String         @map("device_id") @db.Uuid
+  device          Device         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  name            String
+  version         String         @default("")
+  publisher       String?
+  installDate     DateTime?      @map("install_date")
+  installLocation String?        @map("install_location")
+  sizeMb          Int?           @map("size_mb")
+  source          String? // msi, registry, dpkg, rpm, snap, brew, app-bundle
+  status          SoftwareStatus @default(UNKNOWN)
+  matchedRuleId   String?        @map("matched_rule_id") @db.Uuid
+  firstSeenAt     DateTime       @default(now()) @map("first_seen_at")
+  lastSeenAt      DateTime       @default(now()) @map("last_seen_at")
+  removedAt       DateTime?      @map("removed_at")
+
+  @@unique([deviceId, name, version])
+  @@index([name])
+  @@index([status])
+  @@map("software_inventory")
+}
+
+// ─────────────────────────────── USB ───────────────────────────────
+
+model UsbDevice {
+  id             String         @id @default(uuid()) @db.Uuid
+  vendorId       String         @map("vendor_id")
+  productId      String         @map("product_id")
+  serialNumber   String         @default("") @map("serial_number")
+  manufacturer   String?
+  productName    String?        @map("product_name")
+  deviceClass    UsbDeviceClass @default(OTHER) @map("device_class")
+  isWhitelisted  Boolean        @default(false) @map("is_whitelisted")
+  whitelistScope WhitelistScope @default(GLOBAL) @map("whitelist_scope")
+  scopeRefId     String?        @map("scope_ref_id") @db.Uuid // dept/user/device id when scoped
+  readOnly       Boolean        @default(false) @map("read_only")
+  approvedById   String?        @map("approved_by_id") @db.Uuid
+  approvedAt     DateTime?      @map("approved_at")
+  notes          String?
+  firstSeenAt    DateTime       @default(now()) @map("first_seen_at")
+  lastSeenAt     DateTime       @default(now()) @map("last_seen_at")
+
+  events   UsbEvent[]
+  requests UsbAccessRequest[]
+
+  @@unique([vendorId, productId, serialNumber])
+  @@index([isWhitelisted])
+  @@map("usb_devices")
+}
+
+model UsbEvent {
+  id           String         @id @default(uuid()) @db.Uuid
+  deviceId     String         @map("device_id") @db.Uuid
+  device       Device         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  usbDeviceId  String?        @map("usb_device_id") @db.Uuid
+  usbDevice    UsbDevice?     @relation(fields: [usbDeviceId], references: [id], onDelete: SetNull)
+  eventType    UsbEventType   @map("event_type")
+  deviceClass  UsbDeviceClass @default(OTHER) @map("device_class")
+  vendorId     String?        @map("vendor_id")
+  productId    String?        @map("product_id")
+  serialNumber String?        @map("serial_number")
+  label        String?
+  userName     String?        @map("user_name")
+  filePath     String?        @map("file_path")
+  bytes        BigInt?
+  policyReason String?        @map("policy_reason")
+  occurredAt   DateTime       @map("occurred_at")
+  receivedAt   DateTime       @default(now()) @map("received_at")
+
+  @@index([deviceId, occurredAt])
+  @@index([eventType, occurredAt])
+  @@map("usb_events")
+}
+
+model UsbAccessRequest {
+  id            String          @id @default(uuid()) @db.Uuid
+  deviceId      String          @map("device_id") @db.Uuid
+  device        Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  usbDeviceId   String?         @map("usb_device_id") @db.Uuid
+  usbDevice     UsbDevice?      @relation(fields: [usbDeviceId], references: [id], onDelete: SetNull)
+  vendorId      String          @map("vendor_id")
+  productId     String          @map("product_id")
+  serialNumber  String          @default("") @map("serial_number")
+  requesterId   String          @map("requester_id") @db.Uuid
+  requester     User            @relation("UsbRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  reason        String
+  durationHours Int             @default(4) @map("duration_hours")
+  readOnly      Boolean         @default(true) @map("read_only")
+  status        UsbAccessStatus @default(PENDING)
+  approverId    String?         @map("approver_id") @db.Uuid
+  approver      User?           @relation("UsbApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  decisionNote  String?         @map("decision_note")
+  decidedAt     DateTime?       @map("decided_at")
+  expiresAt     DateTime?       @map("expires_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([deviceId])
+  @@map("usb_access_requests")
+}
+
+// ─────────────────────────── Security / Patches ───────────────────────────
+
+model SecurityStatus {
+  id                    String          @id @default(uuid()) @db.Uuid
+  deviceId              String          @unique @map("device_id") @db.Uuid
+  device                Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  antivirusState        ProtectionState @default(UNKNOWN) @map("antivirus_state")
+  antivirusProduct      String?         @map("antivirus_product")
+  antivirusSignatureAt  DateTime?       @map("antivirus_signature_at")
+  edrState              ProtectionState @default(UNKNOWN) @map("edr_state")
+  edrProduct            String?         @map("edr_product")
+  firewallState         ProtectionState @default(UNKNOWN) @map("firewall_state")
+  diskEncryptionState   ProtectionState @default(UNKNOWN) @map("disk_encryption_state")
+  encryptionMethod      String?         @map("encryption_method") // BitLocker, FileVault, LUKS
+  bitlockerState        ProtectionState @default(UNKNOWN) @map("bitlocker_state")
+  secureBootState       ProtectionState @default(UNKNOWN) @map("secure_boot_state")
+  tpmPresent            Boolean?        @map("tpm_present")
+  screenLockEnabled     Boolean?        @map("screen_lock_enabled")
+  screenLockTimeoutSec  Int?            @map("screen_lock_timeout_sec")
+  passwordOnWake        Boolean?        @map("password_on_wake")
+  screenSaverEnabled    Boolean?        @map("screen_saver_enabled")
+  autoUpdateEnabled     Boolean?        @map("auto_update_enabled")
+  usbStorageEnabled     Boolean?        @map("usb_storage_enabled")
+  pendingRebootRequired Boolean?        @map("pending_reboot_required")
+  lastBootAt            DateTime?       @map("last_boot_at")
+  raw                   Json            @default("{}")
+  collectedAt           DateTime        @map("collected_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+
+  @@map("security_status")
+}
+
+model PatchStatus {
+  id          String        @id @default(uuid()) @db.Uuid
+  deviceId    String        @map("device_id") @db.Uuid
+  device      Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  patchId     String        @map("patch_id") // KB5031356, openssl@3.0.2-0ubuntu1.12, ...
+  title       String
+  category    PatchCategory @default(OS)
+  severity    PatchSeverity @default(UNSPECIFIED)
+  state       PatchState
+  product     String?
+  cveIds      String[]      @map("cve_ids")
+  cvssScore   Float?        @map("cvss_score")
+  releasedAt  DateTime?     @map("released_at")
+  detectedAt  DateTime      @default(now()) @map("detected_at")
+  installedAt DateTime?     @map("installed_at")
+  lastError   String?       @map("last_error")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@unique([deviceId, patchId])
+  @@index([state, severity])
+  @@map("patch_status")
+}
+
+model DeviceCommand {
+  id          String        @id @default(uuid()) @db.Uuid
+  deviceId    String        @map("device_id") @db.Uuid
+  device      Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  type        CommandType
+  payload     Json          @default("{}")
+  status      CommandStatus @default(PENDING)
+  result      Json?
+  createdById String?       @map("created_by_id") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at")
+  sentAt      DateTime?     @map("sent_at")
+  completedAt DateTime?     @map("completed_at")
+  expiresAt   DateTime      @map("expires_at")
+
+  @@index([deviceId, status])
+  @@map("device_commands")
+}
+
+// ─────────────────────────────── Alerts ───────────────────────────────
+
+model Alert {
+  id               String        @id @default(uuid()) @db.Uuid
+  deviceId         String?       @map("device_id") @db.Uuid
+  device           Device?       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  category         AlertCategory
+  severity         AlertSeverity
+  status           AlertStatus   @default(OPEN)
+  title            String
+  message          String
+  ruleKey          String?       @map("rule_key")
+  dedupeKey        String?       @map("dedupe_key")
+  occurrences      Int           @default(1)
+  metadata         Json          @default("{}")
+  acknowledgedById String?       @map("acknowledged_by_id") @db.Uuid
+  acknowledgedAt   DateTime?     @map("acknowledged_at")
+  resolvedById     String?       @map("resolved_by_id") @db.Uuid
+  resolvedAt       DateTime?     @map("resolved_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  lastOccurredAt   DateTime      @default(now()) @map("last_occurred_at")
+
+  deliveries AlertDelivery[]
+
+  @@index([status, severity])
+  @@index([deviceId])
+  @@index([dedupeKey, status])
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+model AlertChannel {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique
+  type        AlertChannelType
+  configEnc   String           @map("config_enc") // AES-256-GCM encrypted JSON (webhook URLs, API keys, recipients)
+  minSeverity AlertSeverity    @default(HIGH) @map("min_severity")
+  categories  AlertCategory[]
+  enabled     Boolean          @default(true)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  deliveries AlertDelivery[]
+
+  @@map("alert_channels")
+}
+
+model AlertDelivery {
+  id        String         @id @default(uuid()) @db.Uuid
+  alertId   String         @map("alert_id") @db.Uuid
+  alert     Alert          @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  channelId String         @map("channel_id") @db.Uuid
+  channel   AlertChannel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  status    DeliveryStatus @default(PENDING)
+  attempts  Int            @default(0)
+  error     String?
+  sentAt    DateTime?      @map("sent_at")
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@index([alertId])
+  @@map("alert_deliveries")
+}
+
+// ─────────────────────────────── Audit ───────────────────────────────
+
+// Append-only. Each row stores the SHA-256 hash of (prevHash + canonical row),
+// forming a tamper-evident chain verified by GET /audit/verify.
+model AuditLog {
+  id           BigInt        @id @default(autoincrement())
+  occurredAt   DateTime      @default(now()) @map("occurred_at")
+  category     AuditCategory
+  action       String // e.g. device.update, policy.create, auth.login.success
+  actorType    ActorType     @map("actor_type")
+  actorId      String?       @map("actor_id")
+  actorName    String?       @map("actor_name")
+  resourceType String?       @map("resource_type")
+  resourceId   String?       @map("resource_id")
+  deviceId     String?       @map("device_id") @db.Uuid
+  ipAddress    String?       @map("ip_address")
+  userAgent    String?       @map("user_agent")
+  success      Boolean       @default(true)
+  before       Json?
+  after        Json?
+  metadata     Json?
+  prevHash     String?       @map("prev_hash")
+  hash         String
+
+  @@index([occurredAt])
+  @@index([category, occurredAt])
+  @@index([actorId])
+  @@index([resourceType, resourceId])
+  @@index([deviceId])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────── Reports ───────────────────────────────
+
+model Report {
+  id            String       @id @default(uuid()) @db.Uuid
+  name          String
+  type          ReportType
+  format        ReportFormat
+  status        ReportStatus @default(QUEUED)
+  parameters    Json         @default("{}")
+  filePath      String?      @map("file_path")
+  fileSize      Int?         @map("file_size")
+  rowCount      Int?         @map("row_count")
+  error         String?
+  requestedById String?      @map("requested_by_id") @db.Uuid
+  requestedBy   User?        @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  startedAt     DateTime?    @map("started_at")
+  completedAt   DateTime?    @map("completed_at")
+
+  @@index([requestedById])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+model ReportSchedule {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  type        ReportType
+  format      ReportFormat
+  cron        String
+  parameters  Json         @default("{}")
+  recipients  String[]
+  enabled     Boolean      @default(true)
+  lastRunAt   DateTime?    @map("last_run_at")
+  createdById String?      @map("created_by_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@map("report_schedules")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}

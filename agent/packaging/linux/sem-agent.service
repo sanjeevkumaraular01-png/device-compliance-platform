@@ -1,0 +1,38 @@
+[Unit]
+Description=SecureEndpoint Manager endpoint agent
+Documentation=https://sem.example.com/docs/agent
+After=network-online.target systemd-udevd.service
+Wants=network-online.target
+ConditionFileIsExecutable=/usr/local/bin/sem-agent
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sem-agent run
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+KillMode=mixed
+# Hardening. ProtectSystem=strict / ProtectKernelTunables are intentionally not
+# set: the agent writes udev rules, dconf/apt configuration, runs the package
+# manager and toggles /sys/bus/usb/devices/*/authorized.
+UMask=0077
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+LimitNOFILE=16384
+StateDirectory=sem-agent
+StateDirectoryMode=0700
+LogsDirectory=sem-agent
+LogsDirectoryMode=0700
+ConfigurationDirectory=sem-agent
+ConfigurationDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,92 @@
+# Production: managed PostgreSQL + Redis (DATABASE_URL / REDIS_URL in the
+# sem-secrets Secret), RWX storage, larger resources, pinned image tags.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: secureendpoint
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/prometheus-operator
+
+labels:
+  - pairs:
+      app.kubernetes.io/instance: secureendpoint-production
+      sem.io/environment: production
+    includeSelectors: false
+
+# Pin to an immutable release tag (the deploy workflow updates these).
+images:
+  - name: ghcr.io/secureendpoint/secureendpoint-manager/backend
+    newTag: 1.0.0
+  - name: ghcr.io/secureendpoint/secureendpoint-manager/frontend
+    newTag: 1.0.0
+  - name: ghcr.io/secureendpoint/secureendpoint-manager/agent-dist
+    newTag: 1.0.0
+
+replicas:
+  - name: sem-api
+    count: 3
+  - name: sem-worker
+    count: 2
+  - name: sem-frontend
+    count: 3
+  - name: sem-downloads
+    count: 2
+
+configMapGenerator:
+  - name: sem-config
+    behavior: merge
+    options:
+      labels:
+        app.kubernetes.io/component: config
+    literals:
+      - LOG_LEVEL=info
+      - CORS_ORIGINS=https://sem.example.com
+      - WEB_URL=https://sem.example.com
+      - API_PUBLIC_URL=https://sem.example.com/api/v1
+      - AGENT_DOWNLOAD_BASE_URL=https://sem.example.com/downloads
+      - AZURE_AD_REDIRECT_URI=https://sem.example.com/api/v1/auth/sso/azure-ad/callback
+      - OIDC_REDIRECT_URI=https://sem.example.com/api/v1/auth/sso/oidc/callback
+      - SEED_DEMO_DATA=false
+
+patches:
+  - target:
+      kind: Ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: sem.example.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: sem.example.com
+  - path: resources-api.yaml
+  - path: resources-worker.yaml
+  - path: resources-frontend.yaml
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: sem-api
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: sem-worker
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10
+  # RWX storage: efs-sc (AWS EFS CSI), azurefile-csi-premium (AKS), filestore-rwx (GKE)
+  - target:
+      kind: PersistentVolumeClaim
+      name: sem-data
+    patch: |-
+      - op: add
+        path: /spec/storageClassName
+        value: efs-sc
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 100Gi

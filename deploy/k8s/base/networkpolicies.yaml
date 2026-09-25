@@ -1,0 +1,152 @@
+# Zero-trust networking for the secureendpoint namespace.
+# Assumes: ingress-nginx runs in namespace `ingress-nginx`, Prometheus in `monitoring`,
+# CoreDNS in `kube-system`. Adjust namespaceSelectors to your cluster.
+# ---------------------------------------------------------------- default deny
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# ---------------------------------------------------------------- ingress controller -> web tier
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [sem-api, sem-frontend, sem-downloads]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: 4000 }
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 8080 }
+---
+# ---------------------------------------------------------------- frontend (SSR) -> api
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-allow-from-frontend
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sem-api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: sem-frontend
+      ports:
+        - { protocol: TCP, port: 4000 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-egress-to-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sem-frontend
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: sem-api
+      ports:
+        - { protocol: TCP, port: 4000 }
+---
+# ---------------------------------------------------------------- Prometheus -> /metrics
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [sem-api, sem-worker]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - { protocol: TCP, port: 4000 }
+---
+# ---------------------------------------------------------------- backend egress
+# api / worker / migration -> PostgreSQL, Redis (in-cluster StatefulSets or managed
+# services), SMTP (465/587), LDAPS (636), HTTPS (443: Azure AD / OIDC, Twilio,
+# Slack / Teams / webhooks). Narrow the ipBlocks to your managed DB/Redis CIDRs
+# and egress proxy where possible. Plain LDAP (389) is intentionally not allowed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-egress
+spec:
+  podSelector:
+    matchLabels:
+      sem.io/db-client: "true"
+  policyTypes: [Egress]
+  egress:
+    # In-cluster data stores (optional StatefulSets)
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [sem-postgres, sem-redis]
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 6379 }
+    # Managed data stores (RDS / Azure Database / Cloud SQL, ElastiCache / Azure Cache)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 6379 }
+        - { protocol: TCP, port: 6380 }
+    # Outbound integrations
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32   # cloud metadata endpoint
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 465 }
+        - { protocol: TCP, port: 587 }
+        - { protocol: TCP, port: 636 }

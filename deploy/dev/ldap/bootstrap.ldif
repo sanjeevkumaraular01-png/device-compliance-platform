@@ -1,0 +1,88 @@
+# Sample directory for LOCAL DEVELOPMENT ONLY (docker-compose.dev.yml, profile `ldap`).
+# Base DN: dc=secureendpoint,dc=local   Admin: cn=admin,dc=secureendpoint,dc=local
+# All sample users share the password: LdapUser!2026
+#
+#   uid          group          mapped role (LDAP_GROUP_ROLE_MAP in docker-compose.dev.yml)
+#   ldap.admin   sem-admins     SUPER_ADMIN
+#   ldap.sec     sem-security   SECURITY_ADMIN
+#   ldap.it      sem-it         IT_ADMIN
+#   ldap.audit   sem-auditors   AUDITOR
+#   ldap.user    (none)         EMPLOYEE (LDAP_DEFAULT_ROLE)
+
+dn: ou=people,dc=secureendpoint,dc=local
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=secureendpoint,dc=local
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=ldap.admin,ou=people,dc=secureendpoint,dc=local
+objectClass: inetOrgPerson
+uid: ldap.admin
+cn: LDAP Admin
+sn: Admin
+givenName: LDAP
+displayName: LDAP Admin
+mail: ldap.admin@secureendpoint.local
+userPassword: LdapUser!2026
+
+dn: uid=ldap.sec,ou=people,dc=secureendpoint,dc=local
+objectClass: inetOrgPerson
+uid: ldap.sec
+cn: Sam Security
+sn: Security
+givenName: Sam
+displayName: Sam Security
+mail: ldap.sec@secureendpoint.local
+userPassword: LdapUser!2026
+
+dn: uid=ldap.it,ou=people,dc=secureendpoint,dc=local
+objectClass: inetOrgPerson
+uid: ldap.it
+cn: Ian Tech
+sn: Tech
+givenName: Ian
+displayName: Ian Tech
+mail: ldap.it@secureendpoint.local
+userPassword: LdapUser!2026
+
+dn: uid=ldap.audit,ou=people,dc=secureendpoint,dc=local
+objectClass: inetOrgPerson
+uid: ldap.audit
+cn: Alice Auditor
+sn: Auditor
+givenName: Alice
+displayName: Alice Auditor
+mail: ldap.audit@secureendpoint.local
+userPassword: LdapUser!2026
+
+dn: uid=ldap.user,ou=people,dc=secureendpoint,dc=local
+objectClass: inetOrgPerson
+uid: ldap.user
+cn: Eve Employee
+sn: Employee
+givenName: Eve
+displayName: Eve Employee
+mail: ldap.user@secureendpoint.local
+userPassword: LdapUser!2026
+
+dn: cn=sem-admins,ou=groups,dc=secureendpoint,dc=local
+objectClass: groupOfUniqueNames
+cn: sem-admins
+uniqueMember: uid=ldap.admin,ou=people,dc=secureendpoint,dc=local
+
+dn: cn=sem-security,ou=groups,dc=secureendpoint,dc=local
+objectClass: groupOfUniqueNames
+cn: sem-security
+uniqueMember: uid=ldap.sec,ou=people,dc=secureendpoint,dc=local
+
+dn: cn=sem-it,ou=groups,dc=secureendpoint,dc=local
+objectClass: groupOfUniqueNames
+cn: sem-it
+uniqueMember: uid=ldap.it,ou=people,dc=secureendpoint,dc=local
+
+dn: cn=sem-auditors,ou=groups,dc=secureendpoint,dc=local
+objectClass: groupOfUniqueNames
+cn: sem-auditors
+uniqueMember: uid=ldap.audit,ou=people,dc=secureendpoint,dc=local

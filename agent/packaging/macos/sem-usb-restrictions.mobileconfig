@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  SAMPLE configuration profile for SecureEndpoint on macOS.
+
+  The sem-agent daemon can only unmount/eject non-whitelisted USB storage after
+  it appears. Kernel-level blocking of external storage (and enforcing the
+  screen-lock policy) must be delivered by an MDM as a configuration profile:
+
+    1. com.apple.systemuiserver "mount-controls": deny (or read-only) external
+       hard disks, removable disks, DVD/CD. Supported through macOS 14; on
+       macOS 15+ prefer the declarative "Disk Management Settings"
+       configuration (com.apple.configuration.diskmanagement.settings,
+       Restrictions.ExternalStorage = "Disallowed" | "ReadOnly").
+    2. com.apple.screensaver: idle time + password on wake.
+    3. (Recommended) Privacy Preferences Policy Control granting Full Disk
+       Access (SystemPolicyAllFiles) to /usr/local/bin/sem-agent.
+
+  Replace the PayloadUUIDs with fresh values (uuidgen) and sign the profile
+  before deploying it. Whitelisted devices are handled by sem-agent (it leaves
+  them mounted) only when the mount-controls payload is NOT deployed, because
+  mount-controls has no per-device exceptions.
+-->
+<plist version="1.0">
+<dict>
+	<key>PayloadDisplayName</key>
+	<string>SecureEndpoint Device Restrictions</string>
+	<key>PayloadIdentifier</key>
+	<string>com.secureendpoint.restrictions</string>
+	<key>PayloadOrganization</key>
+	<string>SecureEndpoint</string>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>7C3A1E54-6A55-4C1B-9D0E-5E2B7B9C0001</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+	<key>PayloadRemovalDisallowed</key>
+	<true/>
+	<key>PayloadContent</key>
+	<array>
+		<!-- 1. External storage: deny mounting (use "read-only" instead of "deny" for read-only access). -->
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.systemuiserver</string>
+			<key>PayloadIdentifier</key>
+			<string>com.secureendpoint.restrictions.media</string>
+			<key>PayloadUUID</key>
+			<string>7C3A1E54-6A55-4C1B-9D0E-5E2B7B9C0002</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadDisplayName</key>
+			<string>Removable media</string>
+			<key>mount-controls</key>
+			<dict>
+				<key>harddisk-external</key>
+				<array>
+					<string>deny</string>
+					<string>eject</string>
+				</array>
+				<key>disk-image</key>
+				<array/>
+				<key>dvd</key>
+				<array>
+					<string>deny</string>
+					<string>eject</string>
+				</array>
+				<key>blankdvd</key>
+				<array>
+					<string>deny</string>
+				</array>
+			</dict>
+		</dict>
+		<!-- 2. Screen lock: start screen saver after 10 min, require password immediately. -->
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.screensaver</string>
+			<key>PayloadIdentifier</key>
+			<string>com.secureendpoint.restrictions.screensaver</string>
+			<key>PayloadUUID</key>
+			<string>7C3A1E54-6A55-4C1B-9D0E-5E2B7B9C0003</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadDisplayName</key>
+			<string>Screen lock</string>
+			<key>idleTime</key>
+			<integer>600</integer>
+			<key>askForPassword</key>
+			<true/>
+			<key>askForPasswordDelay</key>
+			<integer>0</integer>
+		</dict>
+		<!-- 3. Full Disk Access for the agent (inventory of protected locations). -->
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.TCC.configuration-profile-policy</string>
+			<key>PayloadIdentifier</key>
+			<string>com.secureendpoint.restrictions.pppc</string>
+			<key>PayloadUUID</key>
+			<string>7C3A1E54-6A55-4C1B-9D0E-5E2B7B9C0004</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>Services</key>
+			<dict>
+				<key>SystemPolicyAllFiles</key>
+				<array>
+					<dict>
+						<key>Identifier</key>
+						<string>/usr/local/bin/sem-agent</string>
+						<key>IdentifierType</key>
+						<string>path</string>
+						<key>CodeRequirement</key>
+						<string>identifier "sem-agent"</string>
+						<key>Allowed</key>
+						<true/>
+						<key>StaticCode</key>
+						<false/>
+					</dict>
+				</array>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

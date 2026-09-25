@@ -1,0 +1,54 @@
+# SecureEndpoint Manager — example Alertmanager configuration (compose profile `monitoring`).
+# These are *infrastructure* alerts from Prometheus. Business alerts (compliance,
+# USB, software) are delivered by the application itself via its alert channels.
+#
+# Replace the placeholders below before enabling. Keep secrets out of git: use
+# `smtp_auth_password_file` / `api_url_file` with a mounted secret in production.
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: "smtp.example.com:587"
+  smtp_from: "alertmanager@example.com"
+  smtp_auth_username: "alertmanager@example.com"
+  smtp_auth_password: "REPLACE_ME"
+  smtp_require_tls: true
+
+route:
+  receiver: ops-email
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: ops-pager
+      repeat_interval: 1h
+      continue: true
+    - matchers: ['severity="info"']
+      receiver: ops-email
+      repeat_interval: 24h
+
+inhibit_rules:
+  # If the whole API is down, don't also page for per-instance failures / stalled check-ins.
+  - source_matchers: ['alertname="SemApiDown"']
+    target_matchers: ['alertname=~"SemApiInstanceDown|SemAgentCheckinsStalled|SemHighErrorRate"']
+  - source_matchers: ['alertname="SemPostgresDown"']
+    target_matchers: ['alertname=~"SemHighErrorRate|SemHighLatencyP95"']
+
+receivers:
+  - name: ops-email
+    email_configs:
+      - to: "secops@example.com"
+        send_resolved: true
+
+  - name: ops-pager
+    slack_configs:
+      - api_url: "https://hooks.slack.com/services/REPLACE/ME/PLEASE"
+        channel: "#secureendpoint-alerts"
+        send_resolved: true
+        title: '{{ .CommonLabels.severity | toUpper }}: {{ .CommonAnnotations.summary }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ "\n" }}{{ end }}'
+    # Microsoft Teams / PagerDuty / Opsgenie are also supported, e.g.:
+    # msteams_configs:
+    #   - webhook_url: "https://example.webhook.office.com/webhookb2/REPLACE"
+    # pagerduty_configs:
+    #   - routing_key: "REPLACE"

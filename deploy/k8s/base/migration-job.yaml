@@ -1,0 +1,87 @@
+# Database migration + seed. Run BEFORE rolling out new api/worker pods:
+#   kubectl kustomize deploy/k8s/overlays/production \
+#     | kubectl apply -f - -l app.kubernetes.io/component=migration
+#   kubectl -n secureendpoint wait --for=condition=complete job/sem-migrate --timeout=10m
+# Jobs are immutable: delete the previous one first (the deploy workflow does this),
+# or rely on ttlSecondsAfterFinished. Argo CD users get PreSync semantics from the hook
+# annotations below.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sem-migrate
+  labels:
+    app.kubernetes.io/name: sem-migrate
+    app.kubernetes.io/component: migration
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sem-migrate
+        app.kubernetes.io/component: migration
+        sem.io/db-client: "true"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: sem-app
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/secureendpoint/secureendpoint-manager/backend
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              npx prisma migrate deploy
+              if [ "$RUN_SEED" = "true" ]; then node dist/prisma/seed.js; fi
+          envFrom:
+            - configMapRef:
+                name: sem-config
+            - secretRef:
+                name: sem-secrets
+          env:
+            - name: APP_ROLE
+              value: api
+            - name: RUN_MIGRATIONS
+              value: "true"
+            - name: RUN_SEED
+              value: "true"
+            # Read-only root FS: keep npm/npx caches in /tmp.
+            - name: HOME
+              value: /tmp
+            - name: npm_config_cache
+              value: /tmp/.npm
+            - name: npm_config_update_notifier
+              value: "false"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

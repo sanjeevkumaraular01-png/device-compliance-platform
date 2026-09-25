@@ -1,0 +1,66 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 10
+    labels: [dependencies, backend]
+    groups:
+      nestjs:
+        patterns: ["@nestjs/*"]
+      prisma:
+        patterns: ["prisma", "@prisma/*"]
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 10
+    labels: [dependencies, frontend]
+    groups:
+      react-next:
+        patterns: ["react", "react-dom", "next", "@types/react*"]
+      radix:
+        patterns: ["@radix-ui/*"]
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directory: /agent
+    schedule: { interval: weekly, day: monday }
+    labels: [dependencies, agent]
+    groups:
+      golang-x:
+        patterns: ["golang.org/x/*"]
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /agent
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    labels: [dependencies, ci]
+    groups:
+      actions:
+        patterns: ["*"]

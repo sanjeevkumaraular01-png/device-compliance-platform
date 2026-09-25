@@ -1,0 +1,17 @@
+# Production sizing (~10k devices). See docs/DEPLOYMENT.md#sizing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sem-frontend
+spec:
+  template:
+    spec:
+      containers:
+        - name: frontend
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi

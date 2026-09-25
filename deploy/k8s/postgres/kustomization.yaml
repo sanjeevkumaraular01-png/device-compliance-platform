@@ -1,0 +1,12 @@
+# OPTIONAL in-cluster PostgreSQL 16 (single instance) for non-managed installs,
+# labs and staging. For production use a managed service (Amazon RDS / Aurora,
+# Azure Database for PostgreSQL Flexible Server, Google Cloud SQL) with HA,
+# PITR backups and encryption at rest — see deploy/k8s/README.md.
+# Reads POSTGRES_PASSWORD from the `sem-secrets` Secret.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: secureendpoint
+
+resources:
+  - statefulset.yaml

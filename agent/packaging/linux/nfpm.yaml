@@ -1,0 +1,42 @@
+# nfpm configuration for .deb / .rpm packages.
+#   ARCH=amd64 VERSION=1.0.0 nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist/
+#   ARCH=arm64 VERSION=1.0.0 nfpm package -f packaging/linux/nfpm.yaml -p rpm -t dist/
+# After installing the package, enroll once:
+#   sudo sem-agent enroll --server https://SERVER --token sem_enr_xxx && sudo systemctl enable --now sem-agent
+name: sem-agent
+arch: "${ARCH}"
+platform: linux
+version: "${VERSION}"
+version_schema: semver
+section: admin
+priority: optional
+maintainer: "SecureEndpoint <support@sem.example.com>"
+vendor: SecureEndpoint
+homepage: https://sem.example.com
+license: Proprietary
+description: |
+  SecureEndpoint Manager endpoint agent: hardware/software inventory, security
+  posture, patch status, USB and software policy enforcement.
+recommends:
+  - lsblk
+  - udev
+suggests:
+  - mokutil
+  - unattended-upgrades
+contents:
+  - src: ./bin/sem-agent-linux-${ARCH}
+    dst: /usr/local/bin/sem-agent
+    file_info:
+      mode: 0755
+  - src: ./packaging/linux/sem-agent.service
+    dst: /lib/systemd/system/sem-agent.service
+    type: config
+    file_info:
+      mode: 0644
+  - dst: /etc/sem-agent
+    type: dir
+    file_info:
+      mode: 0700
+scripts:
+  postinstall: ./packaging/linux/nfpm-postinstall.sh
+  preremove: ./packaging/linux/nfpm-preremove.sh

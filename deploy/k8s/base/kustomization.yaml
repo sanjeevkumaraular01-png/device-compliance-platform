@@ -1,0 +1,58 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# SecureEndpoint Manager — Kubernetes base.
+# Render:  kubectl kustomize deploy/k8s/overlays/production
+# The Secret `sem-secrets` is NOT part of this kustomization — create it out of
+# band (see secret.example.yaml, External Secrets Operator or Sealed Secrets).
+
+namespace: secureendpoint
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: secureendpoint
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - pvc.yaml
+  - backend-api.yaml
+  - worker.yaml
+  - migration-job.yaml
+  - frontend.yaml
+  - downloads.yaml
+  - ingress.yaml
+  - networkpolicies.yaml
+
+configMapGenerator:
+  # Non-secret backend configuration (envFrom). Overlays merge host-specific values.
+  - name: sem-config
+    envs:
+      - config.env
+    options:
+      labels:
+        app.kubernetes.io/component: config
+  - name: sem-downloads-nginx
+    files:
+      - default.conf=downloads-nginx.conf
+    options:
+      labels:
+        app.kubernetes.io/component: config
+  # Security headers applied by ingress-nginx (annotation custom-headers).
+  - name: sem-security-headers
+    envs:
+      - security-headers.env
+    options:
+      disableNameSuffixHash: true
+      labels:
+        app.kubernetes.io/component: config
+
+images:
+  - name: ghcr.io/secureendpoint/secureendpoint-manager/backend
+    newTag: latest
+  - name: ghcr.io/secureendpoint/secureendpoint-manager/frontend
+    newTag: latest
+  - name: ghcr.io/secureendpoint/secureendpoint-manager/agent-dist
+    newTag: latest

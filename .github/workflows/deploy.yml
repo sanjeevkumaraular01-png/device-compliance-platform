@@ -1,0 +1,159 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        required: true
+      tag:
+        description: Image tag to deploy (e.g. 1.4.2 — the release version without "v")
+        type: string
+        required: true
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.tag }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Configure required reviewers / wait timers on the GitHub environments.
+    # Per-environment secret: KUBE_CONFIG (base64 kubeconfig, namespace-scoped RBAC)
+    # Per-environment variable: APP_URL (e.g. https://sem.example.com)
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.APP_URL }}
+    env:
+      OVERLAY: deploy/k8s/overlays/${{ inputs.environment }}
+      NAMESPACE: ${{ inputs.environment == 'production' && 'secureendpoint' || 'secureendpoint-staging' }}
+      TAG: ${{ inputs.tag }}
+      APP_URL: ${{ vars.APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tag
+        run: |
+          if ! [[ "$TAG" =~ ^[0-9A-Za-z._-]+$ ]]; then echo "invalid tag: $TAG"; exit 1; fi
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.31.0
+
+      - uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: "5.4.3"
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          umask 077
+          printf '%s' "$KUBE_CONFIG" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Verify image signatures
+        uses: sigstore/cosign-installer@v3
+      - name: cosign verify
+        env:
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          for img in backend frontend agent-dist; do
+            cosign verify "ghcr.io/${REPO,,}/${img}:${TAG}" \
+              --certificate-identity-regexp "^${SERVER}/${REPO}/\.github/workflows/release\.yml@refs/tags/v" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+            echo "verified ${img}:${TAG}"
+          done
+
+      - name: Set image tags and render
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          base=ghcr.io/secureendpoint/secureendpoint-manager
+          target="ghcr.io/${REPO,,}"
+          (
+            cd "$OVERLAY"
+            kustomize edit set image \
+              "${base}/backend=${target}/backend:${TAG}" \
+              "${base}/frontend=${target}/frontend:${TAG}" \
+              "${base}/agent-dist=${target}/agent-dist:${TAG}"
+          )
+          kustomize build "$OVERLAY" > "$RUNNER_TEMP/rendered.yaml"
+          grep -E '^\s+image:' "$RUNNER_TEMP/rendered.yaml" | sort -u
+
+      - name: Diff (informational)
+        continue-on-error: true
+        run: kubectl diff -f "$RUNNER_TEMP/rendered.yaml" || true
+
+      - name: Record current revision for rollback
+        run: |
+          kubectl -n "$NAMESPACE" get deploy -l app.kubernetes.io/part-of=secureendpoint \
+            -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image || true
+
+      - name: Run database migrations
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" delete job sem-migrate --ignore-not-found --wait=true
+          # ConfigMaps first (the Job reads sem-config), then the Job only.
+          kubectl apply -f "$RUNNER_TEMP/rendered.yaml" -l 'app.kubernetes.io/component in (config)'
+          kubectl apply -f "$RUNNER_TEMP/rendered.yaml" -l 'app.kubernetes.io/component in (migration)'
+          if ! kubectl -n "$NAMESPACE" wait --for=condition=complete job/sem-migrate --timeout=15m; then
+            kubectl -n "$NAMESPACE" logs job/sem-migrate --all-containers --tail=200 || true
+            echo "::error::Migration job failed — nothing else was changed."
+            exit 1
+          fi
+          kubectl -n "$NAMESPACE" logs job/sem-migrate --all-containers --tail=50 || true
+
+      - name: Apply manifests
+        run: kubectl apply -f "$RUNNER_TEMP/rendered.yaml"
+
+      - name: Wait for rollout
+        id: rollout
+        run: |
+          set -euo pipefail
+          for d in sem-api sem-worker sem-frontend sem-downloads; do
+            kubectl -n "$NAMESPACE" rollout status "deployment/$d" --timeout=10m
+          done
+
+      - name: Smoke test
+        id: smoke
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "$APP_URL/api/v1/health"
+          echo
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "$APP_URL/api/v1/health/ready"
+          echo
+          curl -fsS -o /dev/null -w 'console HTTP %{http_code}\n' "$APP_URL/"
+          curl -fsS -o /dev/null -w 'downloads HTTP %{http_code}\n' "$APP_URL/downloads/checksums.txt"
+
+      - name: Roll back on failure
+        if: failure() && (steps.rollout.outcome == 'failure' || steps.smoke.outcome == 'failure')
+        run: |
+          echo "::error::Deployment failed — rolling back deployments to the previous revision."
+          for d in sem-api sem-worker sem-frontend sem-downloads; do
+            kubectl -n "$NAMESPACE" rollout undo "deployment/$d" || true
+          done
+          for d in sem-api sem-worker sem-frontend sem-downloads; do
+            kubectl -n "$NAMESPACE" rollout status "deployment/$d" --timeout=10m || true
+          done
+          echo "NOTE: database migrations are forward-only and were NOT reverted (see docs/DEPLOYMENT.md#upgrades)."
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deploy ${TAG} → ${{ inputs.environment }}"
+            echo "- Namespace: \`${NAMESPACE}\`"
+            echo "- URL: ${APP_URL}"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,8 @@
+# Optional component — requires the Prometheus Operator CRDs
+# (kube-prometheus-stack). Remove it from the overlay if they are not installed.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - servicemonitor.yaml
+  - prometheusrule.yaml

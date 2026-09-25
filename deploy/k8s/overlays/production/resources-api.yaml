@@ -1,0 +1,17 @@
+# Production sizing (~10k devices). See docs/DEPLOYMENT.md#sizing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sem-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi

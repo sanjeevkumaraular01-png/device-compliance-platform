@@ -1,0 +1,155 @@
+# Ingress (ingress-nginx + cert-manager).
+#   /             -> frontend:3000
+#   /api          -> backend:4000   (general API limits)
+#   /api/v1/auth  -> backend:4000   (strict limit)
+#   /api/v1/agent -> backend:4000   (agent protocol, optional mTLS)
+#   /downloads    -> sem-downloads:8080
+# Security headers come from ConfigMap sem-security-headers via the
+# `custom-headers` annotation; recent ingress-nginx versions additionally require
+# the header names in the controller ConfigMap key `global-allowed-response-headers`
+# (X-Frame-Options,X-Content-Type-Options,Referrer-Policy,Permissions-Policy,
+#  Cross-Origin-Opener-Policy,Content-Security-Policy).
+# /metrics is never routed. HSTS is emitted by ingress-nginx for TLS hosts
+# (controller ConfigMap: hsts "true", hsts-max-age "63072000", hsts-include-subdomains "true").
+# Hostnames are replaced by the overlays.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sem-web
+  labels:
+    app.kubernetes.io/component: ingress
+  annotations:
+    # Only this Ingress owns the Certificate; the others reuse the same TLS secret.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    nginx.ingress.kubernetes.io/custom-headers: secureendpoint/sem-security-headers
+    nginx.ingress.kubernetes.io/server-tokens: "false"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - sem.example.com
+      secretName: sem-tls
+  rules:
+    - host: sem.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sem-auth
+  labels:
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    # ~20 requests/minute per client IP for login / MFA / refresh / SSO
+    nginx.ingress.kubernetes.io/limit-rpm: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+    nginx.ingress.kubernetes.io/custom-headers: secureendpoint/sem-security-headers
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - sem.example.com
+      secretName: sem-tls
+  rules:
+    - host: sem.example.com
+      http:
+        paths:
+          - path: /api/v1/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sem-agent
+  labels:
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    # Agents frequently share NAT egress IPs — allow a generous per-IP budget.
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    # --- Optional mTLS with the device certificate (see docs/SECURITY.md) ----
+    # 1. kubectl -n secureendpoint create secret generic sem-agent-ca \
+    #      --from-file=ca.crt=<(curl -fsS https://HOST/api/v1/enrollment/ca.pem)
+    # 2. Uncomment. `optional` keeps /api/v1/agent/enroll usable without a cert;
+    #    the backend receives the verification result in `ssl-client-verify` and
+    #    the PEM in `ssl-client-cert` headers.
+    # nginx.ingress.kubernetes.io/auth-tls-secret: secureendpoint/sem-agent-ca
+    # nginx.ingress.kubernetes.io/auth-tls-verify-client: "optional"
+    # nginx.ingress.kubernetes.io/auth-tls-verify-depth: "2"
+    # nginx.ingress.kubernetes.io/auth-tls-pass-certificate-to-upstream: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - sem.example.com
+      secretName: sem-tls
+  rules:
+    - host: sem.example.com
+      http:
+        paths:
+          - path: /api/v1/agent
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sem-downloads
+  labels:
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/custom-headers: secureendpoint/sem-security-headers
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - sem.example.com
+      secretName: sem-tls
+  rules:
+    - host: sem.example.com
+      http:
+        paths:
+          - path: /downloads
+            pathType: Prefix
+            backend:
+              service:
+                name: sem-downloads
+                port:
+                  name: http

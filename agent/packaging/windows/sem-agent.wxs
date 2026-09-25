@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX v3 template for a SecureEndpoint agent MSI (not built by the Makefile).
+
+    candle -arch x64 -dVersion=1.0.0 -dBinary=bin\sem-agent-windows-amd64.exe packaging\windows\sem-agent.wxs
+    light -ext WixUtilExtension -out dist\sem-agent-1.0.0-x64.msi sem-agent.wixobj
+
+  Silent deployment (Intune / GPO / SCCM):
+    msiexec /i sem-agent-1.0.0-x64.msi /qn SEM_SERVER=https://sem.example.com SEM_TOKEN=sem_enr_xxx
+
+  The MSI installs the binary, registers the SecureEndpointAgent service
+  (LocalSystem, automatic, restart on failure), enrolls using the public
+  properties SEM_SERVER / SEM_TOKEN and starts the service.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+  <?ifndef Version?><?define Version = "1.0.0"?><?endif?>
+  <?ifndef Binary?><?define Binary = "bin\sem-agent-windows-amd64.exe"?><?endif?>
+
+  <Product Id="*" Name="SecureEndpoint Agent" Language="1033" Version="$(var.Version)"
+           Manufacturer="SecureEndpoint" UpgradeCode="3E5B6C1A-4F2D-4B7E-9A31-6D8C2F0B5A11">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64"
+             Description="SecureEndpoint Manager endpoint agent" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of the SecureEndpoint Agent is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="SEM_SERVER" Secure="yes" />
+    <Property Id="SEM_TOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="SEM_EXTRA_ARGS" Secure="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="SecureEndpoint">
+          <Component Id="AgentExe" Guid="8A0C7F21-2B7B-4E3F-8D2E-1C9B4A6E7F01" Win64="yes">
+            <File Id="SemAgentExe" Name="sem-agent.exe" Source="$(var.Binary)" KeyPath="yes" />
+            <ServiceInstall Id="SemAgentService" Name="SecureEndpointAgent" DisplayName="SecureEndpoint Agent"
+                            Description="SecureEndpoint Manager endpoint compliance agent"
+                            Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal"
+                            Arguments="run" Vital="yes">
+              <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
+                                  ThirdFailureActionType="restart" RestartServiceDelayInSeconds="10"
+                                  ResetPeriodInDays="1" />
+            </ServiceInstall>
+            <ServiceControl Id="SemAgentServiceControl" Name="SecureEndpointAgent"
+                            Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <!-- Enroll before the service starts (only when SEM_TOKEN is provided). -->
+    <CustomAction Id="SetEnrollCmd" Property="EnrollAgent"
+                  Value="&quot;[INSTALLFOLDER]sem-agent.exe&quot; enroll --server &quot;[SEM_SERVER]&quot; --token &quot;[SEM_TOKEN]&quot; --force [SEM_EXTRA_ARGS]" />
+    <CustomAction Id="EnrollAgent" BinaryKey="WixCA" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
+    <!-- Undo USB enforcement on uninstall. -->
+    <CustomAction Id="SetResetUsbCmd" Property="ResetUsb" Value="&quot;[INSTALLFOLDER]sem-agent.exe&quot; reset-usb" />
+    <CustomAction Id="ResetUsb" BinaryKey="WixCA" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetEnrollCmd" Before="EnrollAgent">SEM_TOKEN AND NOT REMOVE</Custom>
+      <Custom Action="EnrollAgent" Before="StartServices">SEM_TOKEN AND NOT REMOVE</Custom>
+      <Custom Action="SetResetUsbCmd" Before="ResetUsb">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+      <Custom Action="ResetUsb" After="StopServices">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+    </InstallExecuteSequence>
+
+    <Feature Id="Main" Title="SecureEndpoint Agent" Level="1">
+      <ComponentRef Id="AgentExe" />
+    </Feature>
+  </Product>
+</Wix>

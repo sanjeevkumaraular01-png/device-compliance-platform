@@ -1,0 +1,16 @@
+# Keep LF everywhere: shell scripts, Dockerfiles and YAML run in Linux containers
+# and on endpoints, and break with CRLF (core.autocrlf on Windows checkouts).
+* text=auto eol=lf
+
+# Windows-only scripts
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.exe binary

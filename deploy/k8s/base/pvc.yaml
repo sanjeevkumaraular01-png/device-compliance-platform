@@ -1,0 +1,18 @@
+# Shared /data volume for api + worker: reports written by the worker are
+# downloaded through the api, and the internal device CA lives in /data/pki.
+# Requires a ReadWriteMany StorageClass: AWS EFS (efs-sc), Azure Files
+# (azurefile-csi-premium), GCP Filestore (filestore-rwx), NFS, CephFS, Longhorn RWX.
+# Overlays set storageClassName. Future work: S3-compatible object storage for
+# reports (the CA key would then move to a Secret / KMS).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sem-data
+  labels:
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi

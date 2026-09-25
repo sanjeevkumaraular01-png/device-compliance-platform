@@ -1,0 +1,24 @@
+# Scrapes /metrics of the api (Service `backend`) and the workers (Service
+# `sem-worker-metrics`). Adds app_role="api"|"worker" so the alert rules and
+# Grafana dashboards work identically on compose and Kubernetes.
+# The `release` label must match your kube-prometheus-stack serviceMonitorSelector.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: secureendpoint
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      sem.io/metrics: "true"
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_label_app_kubernetes_io_component]
+          targetLabel: app_role
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod

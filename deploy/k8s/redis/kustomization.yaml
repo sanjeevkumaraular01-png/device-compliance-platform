@@ -1,0 +1,12 @@
+# OPTIONAL in-cluster Redis 7 (single instance, AOF) for non-managed installs,
+# labs and staging. For production prefer a managed service (Amazon ElastiCache,
+# Azure Cache for Redis, Google Memorystore) with `maxmemory-policy noeviction`
+# (required by BullMQ) and TLS (rediss://).
+# Reads REDIS_PASSWORD from the `sem-secrets` Secret.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: secureendpoint
+
+resources:
+  - statefulset.yaml

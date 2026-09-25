@@ -1,0 +1,26 @@
+SecureEndpoint Manager — Proprietary Software License
+Copyright (c) 2026 SecureEndpoint. All rights reserved.
+
+PLACEHOLDER — replace with the license terms approved by your legal team.
+
+This software, including its source code, object code, container images, agent
+binaries, documentation and all associated materials (the "Software"), is the
+confidential and proprietary property of the copyright holder.
+
+No license, express or implied, is granted to any person to use, copy, modify,
+merge, publish, distribute, sublicense, sell, reverse engineer or otherwise
+exploit the Software, in whole or in part, except under a separate written
+agreement signed by the copyright holder.
+
+Unauthorized use, reproduction or distribution of the Software is strictly
+prohibited and may result in civil and criminal penalties.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Third-party open-source components included in the Software are licensed under
+their respective licenses; see the SBOM attached to each release.

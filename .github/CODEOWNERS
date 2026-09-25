@@ -1,0 +1,30 @@
+# Code owners — replace the placeholder teams with your GitHub org teams.
+# The last matching pattern takes precedence.
+
+*                               @secureendpoint/maintainers
+
+/backend/                       @secureendpoint/backend
+/backend/prisma/                @secureendpoint/backend @secureendpoint/dba
+/frontend/                      @secureendpoint/frontend
+/agent/                         @secureendpoint/agent
+
+/docs/API.md                    @secureendpoint/backend @secureendpoint/frontend @secureendpoint/agent
+/docs/                          @secureendpoint/maintainers
+/docs/SECURITY.md               @secureendpoint/security
+
+/docker-compose*.yml            @secureendpoint/platform
+/deploy/                        @secureendpoint/platform
+/scripts/                       @secureendpoint/platform
+/Makefile                       @secureendpoint/platform
+/.env.example                   @secureendpoint/platform @secureendpoint/security
+
+/.github/                       @secureendpoint/platform
+/.github/workflows/release.yml  @secureendpoint/platform @secureendpoint/security
+/.github/workflows/deploy.yml   @secureendpoint/platform @secureendpoint/security
+/.github/CODEOWNERS             @secureendpoint/security
+
+# Security-sensitive backend areas
+/backend/src/auth/              @secureendpoint/security @secureendpoint/backend
+/backend/src/crypto/            @secureendpoint/security @secureendpoint/backend
+/backend/src/pki/               @secureendpoint/security @secureendpoint/backend
+/backend/src/audit/             @secureendpoint/security @secureendpoint/backend

@@ -1,0 +1,79 @@
+# =============================================================================
+#  SecureEndpoint Manager — local development override
+# =============================================================================
+#  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#  docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile ldap up -d
+#
+#  Adds:
+#    * postgres on 127.0.0.1:5432 and redis on 127.0.0.1:6379 (for `npm run start:dev`)
+#    * backend API directly on 127.0.0.1:4000
+#    * Mailpit (SMTP sink) — SMTP 127.0.0.1:1025, web UI http://127.0.0.1:8025
+#    * OpenLDAP with sample users (profile `ldap`) on 127.0.0.1:389
+#  NEVER use this override in production.
+# =============================================================================
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [data-net, dev-net]
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks: [data-net, dev-net]
+
+  backend:
+    ports:
+      - "127.0.0.1:4000:4000"
+    environment: &dev-backend-env
+      LOG_LEVEL: debug
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: "SecureEndpoint Dev <no-reply@secureendpoint.local>"
+      # Points at the `openldap` service (start it with --profile ldap).
+      LDAP_URL: ${DEV_LDAP_URL:-ldap://openldap:389}
+      LDAP_BIND_DN: cn=admin,dc=secureendpoint,dc=local
+      LDAP_BIND_PASSWORD: ${DEV_LDAP_ADMIN_PASSWORD:-DevLdapAdmin!2026}
+      LDAP_SEARCH_BASE: ou=people,dc=secureendpoint,dc=local
+      LDAP_SEARCH_FILTER: (uid={{username}})
+      LDAP_TLS_REJECT_UNAUTHORIZED: "false"
+      LDAP_DEFAULT_ROLE: EMPLOYEE
+      LDAP_GROUP_ROLE_MAP: '{"cn=sem-admins,ou=groups,dc=secureendpoint,dc=local":"SUPER_ADMIN","cn=sem-security,ou=groups,dc=secureendpoint,dc=local":"SECURITY_ADMIN","cn=sem-it,ou=groups,dc=secureendpoint,dc=local":"IT_ADMIN","cn=sem-auditors,ou=groups,dc=secureendpoint,dc=local":"AUDITOR"}'
+
+  worker:
+    environment: *dev-backend-env
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+    networks: [backend-net]
+
+  openldap:
+    profiles: [ldap]
+    image: osixia/openldap:1.5.0
+    restart: unless-stopped
+    command: --copy-service --loglevel info
+    environment:
+      LDAP_ORGANISATION: SecureEndpoint Dev
+      LDAP_DOMAIN: secureendpoint.local
+      LDAP_ADMIN_PASSWORD: ${DEV_LDAP_ADMIN_PASSWORD:-DevLdapAdmin!2026}
+      LDAP_TLS: "false"
+    volumes:
+      - ./deploy/dev/ldap/bootstrap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-sample-users.ldif:ro
+    ports:
+      - "127.0.0.1:389:389"
+    networks: [backend-net]
+
+networks:
+  dev-net:
+    driver: bridge

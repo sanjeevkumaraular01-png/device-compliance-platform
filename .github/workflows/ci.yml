@@ -1,0 +1,297 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ------------------------------------------------------------------ backend
+  backend:
+    name: Backend (NestJS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sem
+          POSTGRES_PASSWORD: sem_ci_password
+          POSTGRES_DB: secureendpoint_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sem -d secureendpoint_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://sem:sem_ci_password@localhost:5432/secureendpoint_test?schema=public
+      REDIS_URL: redis://localhost:6379/0
+      REPORTS_DIR: /tmp/sem/reports
+      CA_CERT_PATH: /tmp/sem/pki/ca.crt
+      CA_KEY_PATH: /tmp/sem/pki/ca.key
+      SEED_DEMO_DATA: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Generate ephemeral test secrets
+        run: |
+          {
+            echo "JWT_ACCESS_SECRET=$(openssl rand -base64 48)"
+            echo "ENCRYPTION_KEY=$(openssl rand -base64 32)"
+          } >> "$GITHUB_ENV"
+
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma validate
+      - run: npm run lint
+      - run: npm test -- --ci --coverage
+      - run: npm run build
+      - name: Apply migrations to the CI database
+        run: npx prisma migrate deploy
+      - name: End-to-end tests
+        run: npm run test:e2e -- --ci
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ------------------------------------------------------------------ frontend
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      API_INTERNAL_URL: http://backend:4000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
+  # ------------------------------------------------------------------ agent
+  agent-test:
+    name: Agent vet/test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: agent
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - run: go mod verify
+      - run: go vet ./...
+      - name: go test
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go test -count=1 ./...
+          else
+            go test -race -count=1 ./...
+          fi
+
+  agent-build:
+    name: Agent cross-compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: agent-test
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Build all targets
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          # Locate the main package without hard-coding its path.
+          MAIN_PKG="$(go list -f '{{if eq .Name "main"}}{{.ImportPath}}{{end}}' ./... | head -n1)"
+          test -n "$MAIN_PKG" || { echo "no main package found"; exit 1; }
+          VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+          mkdir -p dist
+          for os in windows linux darwin; do
+            for arch in amd64 arm64; do
+              ext=""; [ "$os" = "windows" ] && ext=".exe"
+              echo "building $os/$arch from $MAIN_PKG"
+              GOOS=$os GOARCH=$arch go build -trimpath \
+                -ldflags "-s -w -X main.version=${VERSION}" \
+                -o "dist/sem-agent-${os}-${arch}${ext}" "$MAIN_PKG"
+            done
+          done
+          (cd dist && sha256sum sem-agent-* > checksums.txt && cat checksums.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sem-agent-binaries
+          path: agent/dist/*
+          retention-days: 14
+
+  # ------------------------------------------------------------------ container images
+  docker:
+    name: Docker build (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            context: backend
+            build-args: ""
+          - image: frontend
+            context: frontend
+            build-args: API_INTERNAL_URL=http://backend:4000
+          - image: agent-dist
+            context: agent
+            build-args: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          load: false
+          build-args: ${{ matrix.build-args }}
+          tags: secureendpoint/${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  # ------------------------------------------------------------------ infrastructure lint
+  infra:
+    name: Infrastructure validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config
+        run: |
+          ./scripts/generate-secrets.sh --output /tmp/ci.env
+          docker compose --env-file /tmp/ci.env -f docker-compose.yml config -q
+          docker compose --env-file /tmp/ci.env -f docker-compose.yml --profile monitoring config -q
+          docker compose --env-file /tmp/ci.env -f docker-compose.yml -f docker-compose.dev.yml --profile ldap config -q
+      - name: Prometheus rules
+        run: |
+          docker run --rm -v "$PWD/deploy/prometheus:/cfg:ro" --entrypoint promtool prom/prometheus:v2.55.1 check rules /cfg/alerts.yml
+      - name: Kustomize render + kubeconform
+        run: |
+          for overlay in staging production; do
+            docker run --rm -v "$PWD/deploy/k8s:/k8s:ro" registry.k8s.io/kubectl:v1.31.0 kustomize "/k8s/overlays/$overlay" > "/tmp/$overlay.yaml"
+            docker run --rm -v /tmp:/work:ro ghcr.io/yannh/kubeconform:latest \
+              -strict -summary -ignore-missing-schemas -kubernetes-version 1.31.0 "/work/$overlay.yaml"
+          done
+      - name: Grafana dashboards are valid JSON
+        run: for f in deploy/grafana/dashboards/*.json; do jq empty "$f"; done
+
+  # ------------------------------------------------------------------ security
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy filesystem scan (vulns, secrets, misconfig)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: "0"
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: npm audit (backend, non-blocking)
+        continue-on-error: true
+        working-directory: backend
+        run: npm audit --audit-level=high --omit=dev
+      - name: npm audit (frontend, non-blocking)
+        continue-on-error: true
+        working-directory: frontend
+        run: npm audit --audit-level=high --omit=dev
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: govulncheck
+        working-directory: agent
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+      - name: gosec (non-blocking)
+        continue-on-error: true
+        working-directory: agent
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          "$(go env GOPATH)/bin/gosec" -no-fail -fmt sarif -out ../gosec.sarif ./...
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('gosec.sarif') != ''
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
