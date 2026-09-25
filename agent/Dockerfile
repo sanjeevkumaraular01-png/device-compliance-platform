@@ -6,7 +6,7 @@
 # Used as an init/sidecar container (docker-compose / Kubernetes initContainer)
 # to populate the volume Nginx serves at https://SERVER/downloads/.
 
-FROM golang:1.23 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-buildvcs=false GOTOOLCHAIN=local
 COPY go.mod go.sum ./
