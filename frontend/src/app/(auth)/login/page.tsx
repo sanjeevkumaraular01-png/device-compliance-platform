@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { Field } from "@/components/common/misc";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { useAuth, type LoginResult } from "@/lib/auth";
-import type { SsoProvider } from "@/types/api";
+import type { AuthMethods } from "@/types/api";
 
 const emailSchema = z.object({
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
@@ -86,9 +86,9 @@ function LoginInner() {
     if (status === "authenticated") router.replace(next);
   }, [status, router, next]);
 
-  const sso = useQuery({
-    queryKey: ["auth", "sso-providers"],
-    queryFn: () => api.get<SsoProvider[]>("/auth/sso/providers", undefined, { anonymous: true }),
+  const methods = useQuery({
+    queryKey: ["auth", "methods"],
+    queryFn: () => api.get<AuthMethods>("/auth/methods", undefined, { anonymous: true }),
     retry: false,
     staleTime: 5 * 60_000,
   });
@@ -126,8 +126,16 @@ function LoginInner() {
     }
   });
 
-  const providers = sso.data ?? [];
-  const apiDown = sso.isError && sso.error instanceof ApiError && sso.error.isNetwork;
+  const providers = methods.data?.sso ?? [];
+  // Default to showing the directory tab until we know (avoids a flash of it
+  // disappearing); hide it once the API confirms LDAP is not configured.
+  const ldapEnabled = methods.data ? methods.data.ldap : false;
+  const apiDown = methods.isError && methods.error instanceof ApiError && methods.error.isNetwork;
+
+  // If the directory tab is selected but LDAP turns out to be unavailable, fall back to email.
+  React.useEffect(() => {
+    if (methods.data && !methods.data.ldap && tab === "ldap") setTab("local");
+  }, [methods.data, tab]);
 
   return (
     <div>
@@ -167,14 +175,16 @@ function LoginInner() {
           setSubmitError(null);
         }}
       >
-        <TabsList variant="pill" className="grid w-full grid-cols-2">
-          <TabsTrigger value="local">
-            <Mail /> Email
-          </TabsTrigger>
-          <TabsTrigger value="ldap">
-            <Building2 /> Directory
-          </TabsTrigger>
-        </TabsList>
+        {ldapEnabled && (
+          <TabsList variant="pill" className="grid w-full grid-cols-2">
+            <TabsTrigger value="local">
+              <Mail /> Email
+            </TabsTrigger>
+            <TabsTrigger value="ldap">
+              <Building2 /> Directory
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         <TabsContent value="local">
           <form onSubmit={onEmail} className="grid gap-4" noValidate>
@@ -204,6 +214,7 @@ function LoginInner() {
           </form>
         </TabsContent>
 
+        {ldapEnabled && (
         <TabsContent value="ldap">
           <form onSubmit={onLdap} className="grid gap-4" noValidate>
             <Field
@@ -234,6 +245,7 @@ function LoginInner() {
             </Button>
           </form>
         </TabsContent>
+        )}
       </Tabs>
 
       <p className="mt-6 text-center text-xs text-muted-foreground">

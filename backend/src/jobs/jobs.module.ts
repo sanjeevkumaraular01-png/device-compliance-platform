@@ -7,8 +7,12 @@ import { UsbService } from '../usb/usb.service';
 import { ComplianceService } from '../compliance/compliance.service';
 import { SettingsService } from '../settings/settings.service';
 import { ReportsService } from '../reports/reports.service';
-import { QUEUE_MAINTENANCE } from '../queues/queues';
+import { QUEUE_MAINTENANCE, QUEUE_WORKFORCE } from '../queues/queues';
 import { AppConfigService } from '../config/app-config.service';
+import { WorkforceModule } from '../workforce/workforce.module';
+import { AiModule } from '../ai/ai.module';
+import { WorkforceProcessor, WORKFORCE_SCHEDULES } from './workforce.processor';
+import { DemoWorkforceActivity } from './demo-workforce';
 
 /** Repeating maintenance jobs (BullMQ job schedulers, safe with multiple workers). */
 type Schedule = { key: string; pattern?: string; every?: number };
@@ -30,6 +34,7 @@ export class JobsScheduler implements OnApplicationBootstrap {
 
   constructor(
     @InjectQueue(QUEUE_MAINTENANCE) private readonly queue: Queue,
+    @InjectQueue(QUEUE_WORKFORCE) private readonly workforceQueue: Queue,
     private readonly config: AppConfigService,
   ) {}
 
@@ -45,7 +50,16 @@ export class JobsScheduler implements OnApplicationBootstrap {
     }
     // Turning demo mode off must stop the simulated check-ins.
     if (!this.config.demoActivity) await this.queue.removeJobScheduler(DEMO_ACTIVITY.key);
-    this.logger.log(`Registered ${schedules.length} maintenance schedules${this.config.demoActivity ? ' (demo activity on)' : ''}`);
+    for (const s of WORKFORCE_SCHEDULES) {
+      await this.workforceQueue.upsertJobScheduler(
+        s.key,
+        s.pattern ? { pattern: s.pattern, tz: 'UTC' } : { every: s.every! },
+        { name: s.key, data: {}, opts: { removeOnComplete: 50, removeOnFail: 100 } },
+      );
+    }
+    this.logger.log(
+      `Registered ${schedules.length} maintenance + ${WORKFORCE_SCHEDULES.length} workforce schedules${this.config.demoActivity ? ' (demo activity on)' : ''}`,
+    );
   }
 }
 
@@ -60,6 +74,7 @@ export class MaintenanceProcessor extends WorkerHost {
     private readonly compliance: ComplianceService,
     private readonly settings: SettingsService,
     private readonly reports: ReportsService,
+    private readonly demoWorkforce: DemoWorkforceActivity,
   ) {
     super();
   }
@@ -122,6 +137,11 @@ export class MaintenanceProcessor extends WorkerHost {
    * never devices enrolled by a real agent.
    */
   async demoActivity() {
+    // Seeded demo employees also produce today's live workforce activity (never real users).
+    const workforce = await this.demoWorkforce.run().catch((e) => {
+      this.logger.warn(`demo workforce activity failed: ${(e as Error).message}`);
+      return null;
+    });
     const touched = await this.prisma.$executeRaw`
       UPDATE devices d
       SET last_seen_at = now() - (random() * interval '4 minutes')
@@ -130,7 +150,7 @@ export class MaintenanceProcessor extends WorkerHost {
         AND s.raw ->> 'collector' = 'seed'
         AND d.status = 'ACTIVE'
         AND ('x' || substr(md5(d.id::text), 1, 8))::bit(32)::int % 100 < 85`;
-    return { demoDevicesRefreshed: touched };
+    return { demoDevicesRefreshed: touched, workforce };
   }
 
   async expireCommands() {
@@ -157,6 +177,7 @@ export class MaintenanceProcessor extends WorkerHost {
 }
 
 @Module({
-  providers: [JobsScheduler, MaintenanceProcessor],
+  imports: [WorkforceModule, AiModule],
+  providers: [JobsScheduler, MaintenanceProcessor, WorkforceProcessor, DemoWorkforceActivity],
 })
 export class JobsModule {}

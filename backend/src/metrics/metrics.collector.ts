@@ -3,7 +3,7 @@ import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@ne
 import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { MetricsService } from './metrics.service';
-import { QUEUE_ALERTS, QUEUE_COMPLIANCE, QUEUE_MAINTENANCE, QUEUE_REPORTS } from '../queues/queues';
+import { QUEUE_ALERTS, QUEUE_COMPLIANCE, QUEUE_MAINTENANCE, QUEUE_REPORTS, QUEUE_WORKFORCE } from '../queues/queues';
 import { AlertSeverity, ComplianceState, OsPlatform, RiskLevel } from '@prisma/client';
 
 const REFRESH_MS = 60_000;
@@ -22,8 +22,9 @@ export class MetricsCollector implements OnApplicationBootstrap, OnModuleDestroy
     @InjectQueue(QUEUE_REPORTS) reports: Queue,
     @InjectQueue(QUEUE_COMPLIANCE) compliance: Queue,
     @InjectQueue(QUEUE_MAINTENANCE) maintenance: Queue,
+    @InjectQueue(QUEUE_WORKFORCE) workforce: Queue,
   ) {
-    this.queues = [alerts, reports, compliance, maintenance];
+    this.queues = [alerts, reports, compliance, maintenance, workforce];
   }
 
   onApplicationBootstrap(): void {
@@ -60,6 +61,9 @@ export class MetricsCollector implements OnApplicationBootstrap, OnModuleDestroy
         this.metrics.devicesRisk.set({ risk_level: r }, byRisk.find((x) => x.riskLevel === r)?._count._all ?? 0);
       }
       this.metrics.devicesOnline.set(online);
+      const wf = await this.prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT count(DISTINCT user_id)::bigint AS n FROM activity_segments WHERE ended_at >= now() - interval '3 minutes'`;
+      this.metrics.workforceOnline.set(Number(wf[0]?.n ?? 0));
       this.metrics.softwareViolations.set(violations);
       for (const s of Object.values(AlertSeverity)) {
         this.metrics.alertsOpen.set({ severity: s }, alerts.find((x) => x.severity === s)?._count._all ?? 0);

@@ -17,6 +17,16 @@ describe('CryptoCore (AES-256-GCM)', () => {
     expect(c.decryptJson(c.encryptJson(value))).toEqual(value);
   });
 
+  it('round-trips binary buffers and rejects tampering', () => {
+    const img = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5]);
+    const enc = c.encryptBuffer(img);
+    expect(enc.subarray(0, 5).toString('ascii')).toBe('SEMB1');
+    expect(enc.includes(img)).toBe(false);
+    expect(c.decryptBuffer(enc).equals(img)).toBe(true);
+    enc[enc.length - 1] ^= 0xff;
+    expect(() => c.decryptBuffer(enc)).toThrow();
+  });
+
   it('uses a random IV (same plaintext -> different ciphertexts)', () => {
     expect(c.encrypt('same')).not.toBe(c.encrypt('same'));
   });

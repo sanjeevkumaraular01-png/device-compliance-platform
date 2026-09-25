@@ -8,6 +8,7 @@ export class AlertQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ enum: AlertSeverity }) @IsOptional() @IsEnum(AlertSeverity) severity?: AlertSeverity;
   @ApiPropertyOptional({ enum: AlertCategory }) @IsOptional() @IsEnum(AlertCategory) category?: AlertCategory;
   @ApiPropertyOptional() @IsOptional() @IsUUID() deviceId?: string;
+  @ApiPropertyOptional({ description: 'Employee a workforce alert is about' }) @IsOptional() @IsUUID() subjectUserId?: string;
 }
 
 export class BulkAlertDto {

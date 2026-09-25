@@ -153,4 +153,16 @@ export class AppConfigService {
   }
   /** Keep seeded demo devices "checking in" so a demo install does not go stale. */
   get demoActivity() { return this.bool('DEMO_ACTIVITY', this.bool('SEED_DEMO_DATA', true)); }
+
+  // ── Workforce / AI (docs/WORKFORCE.md) ──
+  get screenshotsDir() { return this.str('SCREENSHOTS_DIR', './data/screenshots'); }
+  get workforceTimezone() { return this.str('WORKFORCE_TIMEZONE', 'Asia/Kolkata'); }
+  get anthropicApiKey() { return this.str('ANTHROPIC_API_KEY'); }
+  get aiModel() { return this.str('AI_MODEL', 'claude-opus-5'); }
+  get aiEffort(): 'low' | 'medium' | 'high' | 'xhigh' | 'max' {
+    const v = this.str('AI_EFFORT', 'high');
+    return (['low', 'medium', 'high', 'xhigh', 'max'].includes(v) ? v : 'high') as 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  }
+  get aiDailyRunTime() { return this.str('AI_DAILY_RUN_TIME', '20:30'); }
+  get aiMaxEmployeesPerRun() { return this.num('AI_MAX_EMPLOYEES_PER_RUN', 500); }
 }

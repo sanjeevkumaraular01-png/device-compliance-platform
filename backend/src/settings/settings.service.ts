@@ -23,7 +23,23 @@ const SETTING_SPECS: Record<string, { validate: (v: unknown) => boolean; hint: s
   supportEmail: { validate: (v) => typeof v === 'string' && v.length <= 200, hint: 'string' },
   passwordExpiryDays: { validate: (v) => Number.isInteger(v) && (v as number) >= 0, hint: 'integer >= 0 (0 = never)' },
   usbRequestMaxHours: { validate: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 72, hint: 'integer 1-72' },
+  // Workforce (docs/WORKFORCE.md)
+  aiEnabled: { validate: (v) => typeof v === 'boolean', hint: 'boolean' },
+  workforceTimezone: { validate: (v) => typeof v === 'string' && isValidTimeZone(v), hint: 'IANA time zone, e.g. Asia/Kolkata' },
+  taskWebhookToken: {
+    validate: (v) => v === '' || (typeof v === 'string' && v.length >= 24 && v.length <= 200),
+    hint: 'string of 24-200 characters (empty disables the task webhook)',
+  },
 };
+
+function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 @Injectable()
 export class SettingsService {
@@ -48,6 +64,9 @@ export class SettingsService {
       supportEmail: '',
       passwordExpiryDays: 0,
       usbRequestMaxHours: 72,
+      aiEnabled: true,
+      workforceTimezone: this.config.workforceTimezone,
+      taskWebhookToken: '',
     };
   }
 

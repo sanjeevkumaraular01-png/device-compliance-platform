@@ -20,6 +20,8 @@ function Uninstall-SemAgent {
         # Undo USB enforcement (USBSTOR, write protection, disabled devices).
         & $exe reset-usb 2>$null
         & $exe uninstall 2>$null
+        # Stop per-user activity helpers running in signed-in sessions
+        Get-CimInstance Win32_Process -Filter "Name LIKE 'sem-agent%'" | Where-Object { $_.CommandLine -match 'user-helper' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     }
     elseif (Get-Service -Name 'SecureEndpointAgent' -ErrorAction SilentlyContinue) {
         Stop-Service -Name 'SecureEndpointAgent' -Force -ErrorAction SilentlyContinue

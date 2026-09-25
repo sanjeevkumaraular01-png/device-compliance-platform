@@ -92,6 +92,23 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  readonly workforceOnline = new Gauge({
+    name: 'sem_workforce_online',
+    help: 'Employees whose last activity segment ended within the last 3 minutes',
+    registers: [this.registry],
+  });
+  readonly workforceSegments = new Counter({
+    name: 'sem_workforce_activity_segments_total',
+    help: 'Workforce activity segments accepted from agents',
+    registers: [this.registry],
+  });
+  readonly aiTokens = new Counter({
+    name: 'sem_ai_tokens_total',
+    help: 'Claude API tokens used by AI work intelligence, by type (input, output, cache_read)',
+    labelNames: ['type'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({ app: 'secureendpoint-backend' });
     collectDefaultMetrics({ register: this.registry });

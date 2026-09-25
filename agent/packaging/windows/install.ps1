@@ -18,7 +18,9 @@ function Install-SemAgent {
         [switch]$InsecureSkipVerify,
         [string]$CaFile,
         [ValidateSet('', 'amd64', 'arm64')][string]$Arch = '',
-        [string]$InstallDir = (Join-Path $env:ProgramFiles 'SecureEndpoint')
+        [string]$InstallDir = (Join-Path $env:ProgramFiles 'SecureEndpoint'),
+        # Chrome/Edge extension IDs allowed to report the active tab hostname (workforce tracking)
+        [string[]]$ExtensionId = @()
     )
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
@@ -87,9 +89,17 @@ public static class SemTrustAll { public static bool Accept(object s, X509Certif
         & $exe @enrollArgs
         if ($LASTEXITCODE -ne 0) { throw "Enrollment failed (exit code $LASTEXITCODE)" }
 
+        $installArgs = @('install')
+        foreach ($id in $ExtensionId) { $installArgs += @('--extension-id', $id) }
         if (-not $svc) {
-            & $exe install
+            & $exe @installArgs
             if ($LASTEXITCODE -ne 0) { throw "Service installation failed (exit code $LASTEXITCODE)" }
+        }
+        if ($svc) {
+            # Upgrade: service already exists; refresh helper autostart + browser host registration.
+            $integrationArgs = @('integration', 'install')
+            foreach ($id in $ExtensionId) { $integrationArgs += @('--extension-id', $id) }
+            & $exe @integrationArgs
         }
         & $exe start
         if ($LASTEXITCODE -ne 0) { throw "Service start failed (exit code $LASTEXITCODE)" }

@@ -11,6 +11,7 @@ export const ROLE_KEYS = [
   "DEPARTMENT_MANAGER",
   "EMPLOYEE",
   "AUDITOR",
+  "HR_MANAGER",
 ] as const;
 export type RoleKey = (typeof ROLE_KEYS)[number];
 
@@ -71,7 +72,7 @@ export type AlertSeverity = (typeof ALERT_SEVERITIES)[number];
 export const ALERT_STATUSES = ["OPEN", "ACKNOWLEDGED", "RESOLVED"] as const;
 export type AlertStatus = (typeof ALERT_STATUSES)[number];
 
-export const ALERT_CATEGORIES = ["COMPLIANCE", "USB", "SOFTWARE", "SECURITY", "PATCH", "AUTH", "DEVICE", "SYSTEM"] as const;
+export const ALERT_CATEGORIES = ["COMPLIANCE", "USB", "SOFTWARE", "SECURITY", "PATCH", "AUTH", "DEVICE", "SYSTEM", "WORKFORCE"] as const;
 export type AlertCategory = (typeof ALERT_CATEGORIES)[number];
 
 export const ALERT_CHANNEL_TYPES = ["EMAIL", "SMS", "SLACK", "TEAMS", "WHATSAPP", "WEBHOOK"] as const;
@@ -171,6 +172,12 @@ export interface SsoProvider {
   id: "azure-ad" | "oidc";
   name: string;
   loginUrl: string;
+}
+
+export interface AuthMethods {
+  local: boolean;
+  ldap: boolean;
+  sso: SsoProvider[];
 }
 
 export interface MfaSetupResponse {
@@ -798,6 +805,9 @@ export interface Alert {
   createdAt: string;
   lastOccurredAt: string;
   deliveries?: AlertDelivery[];
+  /** Workforce alerts: the employee the alert is about. */
+  subjectUserId?: string | null;
+  subjectUser?: UserRef | null;
 }
 
 export type AlertChannelConfig =
@@ -1003,3 +1013,570 @@ export interface IpRestriction {
 }
 
 export type SystemSettings = Record<string, unknown>;
+
+// ─────────────────────────────── Workforce ───────────────────────────────
+// docs/WORKFORCE.md — productivity, attendance, tasks, daily reports, AI work intelligence.
+
+export const ACTIVITY_CATEGORIES = ["PRODUCTIVE", "NEUTRAL", "UNPRODUCTIVE", "BLOCKED", "UNCATEGORIZED"] as const;
+export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number];
+
+export const APP_RULE_KINDS = ["APP", "WEBSITE"] as const;
+export type AppRuleKind = (typeof APP_RULE_KINDS)[number];
+
+export const WORK_LOCATIONS = ["OFFICE", "REMOTE", "UNKNOWN"] as const;
+export type WorkLocation = (typeof WORK_LOCATIONS)[number];
+
+export const ATTENDANCE_STATUSES = ["PRESENT", "LATE", "HALF_DAY", "ABSENT", "ON_LEAVE", "HOLIDAY", "WEEKEND"] as const;
+export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number];
+
+export const CLOCK_EVENT_TYPES = ["CLOCK_IN", "CLOCK_OUT", "BREAK_START", "BREAK_END", "LOCK", "UNLOCK", "LOGON", "LOGOFF", "SLEEP", "WAKE"] as const;
+export type ClockEventType = (typeof CLOCK_EVENT_TYPES)[number];
+export type ClockAction = "CLOCK_IN" | "CLOCK_OUT" | "BREAK_START" | "BREAK_END";
+
+export const CLOCK_SOURCES = ["AGENT", "WEB", "MANUAL_CORRECTION"] as const;
+export type ClockSource = (typeof CLOCK_SOURCES)[number];
+
+export const PROJECT_STATUSES = ["PLANNED", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+export const TASK_STATUSES = ["TODO", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "DONE", "CANCELLED"] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+export const TASK_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+
+export const TASK_SOURCES = ["MANUAL", "SALES_CRM", "SUPPORT", "DEVELOPMENT", "MARKETING", "HR", "HARDWARE", "NETWORK", "FINANCE", "OTHER"] as const;
+export type TaskSource = (typeof TASK_SOURCES)[number];
+
+export const TIME_ENTRY_SOURCES = ["TIMER", "AGENT_AUTO", "MANUAL"] as const;
+export type TimeEntrySource = (typeof TIME_ENTRY_SOURCES)[number];
+
+export const DAILY_REPORT_STATUSES = ["DRAFT", "SUBMITTED", "APPROVED", "CHANGES_REQUESTED"] as const;
+export type DailyReportStatus = (typeof DAILY_REPORT_STATUSES)[number];
+
+export const AI_INSIGHT_TYPES = ["EMPLOYEE_DAILY", "MANAGEMENT_DAILY"] as const;
+export type AiInsightType = (typeof AI_INSIGHT_TYPES)[number];
+
+export const AI_INSIGHT_STATUSES = ["PENDING", "READY", "FAILED", "SKIPPED"] as const;
+export type AiInsightStatus = (typeof AI_INSIGHT_STATUSES)[number];
+
+export const LIVE_STATUSES = ["ONLINE_ACTIVE", "ONLINE_IDLE", "ON_BREAK", "OFFLINE", "CLOCKED_OUT"] as const;
+export type LiveStatus = (typeof LIVE_STATUSES)[number];
+
+export const WORKFORCE_ALERT_RULES = [
+  "late_login",
+  "no_activity_after_login",
+  "excessive_idle",
+  "unproductive_usage",
+  "blocked_app_used",
+  "no_task_selected",
+  "daily_report_missing",
+  "excessive_overtime",
+  "workload_overload",
+  "deadline_at_risk",
+  "productivity_drop",
+  "repeated_task_delay",
+] as const;
+export type WorkforceAlertRule = (typeof WORKFORCE_ALERT_RULES)[number];
+
+/** Employee reference as embedded in workforce responses. */
+export interface WorkforceUserRef extends UserRef {
+  jobTitle?: string | null;
+  department?: NamedRef | null;
+}
+
+export interface WorkforcePolicy {
+  id: string;
+  name: string;
+  description: string | null;
+  isDefault: boolean;
+  trackingEnabled: boolean;
+  timezone: string;
+  workDays: number[]; // ISO weekday 1=Mon..7=Sun
+  workStart: string; // HH:mm
+  workEnd: string;
+  graceMinutes: number;
+  minDailyMinutes: number;
+  halfDayMinutes: number;
+  overtimeAfterMinutes: number;
+  maxBreakMinutes: number;
+  trackOutsideWorkHours: boolean;
+  idleThresholdSec: number;
+  trackApps: boolean;
+  trackWebsites: boolean;
+  captureWindowTitles: boolean;
+  screenshotsEnabled: boolean;
+  screenshotIntervalMin: number;
+  screenshotBlur: boolean;
+  screenshotRetentionDays: number;
+  officeNetworks: string[];
+  requireTaskSelection: boolean;
+  requireDailyReport: boolean;
+  dailyReportDueTime: string;
+  alertLateLogin: boolean;
+  alertNoActivityMinutes: number;
+  alertIdlePercent: number;
+  alertOvertimeMinutes: number;
+  alertUnproductivePercent: number;
+  employeeCanSeeOwnData: boolean;
+  showTrackingNotice: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  departments?: NamedRef[];
+  _count?: { departments?: number };
+}
+
+export type WorkforcePolicyInput = Omit<WorkforcePolicy, "id" | "version" | "createdAt" | "updatedAt" | "departments" | "_count">;
+
+/** The subset of the policy an employee sees about their own tracking (`GET /workforce/me`). */
+export type WorkforcePolicyPublic = Partial<WorkforcePolicy> & Pick<WorkforcePolicy, "timezone" | "workDays" | "workStart" | "workEnd">;
+
+export interface AppRule {
+  id: string;
+  kind: AppRuleKind;
+  pattern: string;
+  matchType: MatchType;
+  label: string;
+  category: ActivityCategory;
+  departmentId: string | null;
+  department?: NamedRef | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AppRuleInput = Pick<AppRule, "kind" | "pattern" | "matchType" | "label" | "category"> & { departmentId?: string | null };
+
+export interface UncategorizedItem {
+  kind: AppRuleKind;
+  value: string;
+  seconds: number;
+  users: number;
+}
+
+export interface WorkSession {
+  id: string;
+  userId: string;
+  date: string;
+  status: AttendanceStatus;
+  location: WorkLocation;
+  clockInAt: string | null;
+  clockOutAt: string | null;
+  firstActivityAt: string | null;
+  lastActivityAt: string | null;
+  activeSec: number;
+  idleSec: number;
+  productiveSec: number;
+  neutralSec: number;
+  unproductiveSec: number;
+  breakSec: number;
+  meetingSec: number;
+  focusSec: number;
+  lateMinutes: number;
+  earlyLeaveMinutes: number;
+  overtimeMinutes: number;
+  missingMinutes: number;
+  currentApp: string | null;
+  currentTaskId: string | null;
+  deviceId: string | null;
+  isManuallyAdjusted: boolean;
+  adjustmentNote: string | null;
+  adjustedById: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AttendanceRow extends WorkSession {
+  user: WorkforceUserRef;
+}
+
+export interface AttendanceCorrectionInput {
+  clockInAt?: string;
+  clockOutAt?: string;
+  status?: AttendanceStatus;
+  location?: WorkLocation;
+  note: string;
+}
+
+export interface MonthlyAttendanceDay {
+  date: string;
+  status: AttendanceStatus | null;
+  workedMinutes: number;
+  lateMinutes: number;
+  location: WorkLocation | null;
+}
+
+export interface MonthlyAttendanceTotals {
+  present: number;
+  late: number;
+  halfDay: number;
+  absent: number;
+  leave: number;
+  workedHours: number;
+  overtimeHours: number;
+  missingHours: number;
+}
+
+export interface MonthlyAttendance {
+  month: string;
+  days: string[];
+  rows: { user: WorkforceUserRef; days: MonthlyAttendanceDay[]; totals: MonthlyAttendanceTotals }[];
+}
+
+export interface ClockEvent {
+  id: string;
+  userId: string;
+  deviceId: string | null;
+  type: ClockEventType;
+  source: ClockSource;
+  location: WorkLocation;
+  ipAddress: string | null;
+  note: string | null;
+  occurredAt: string;
+  createdAt: string;
+}
+
+export interface LiveEmployee {
+  userId: string;
+  displayName: string;
+  email: string;
+  jobTitle: string | null;
+  department: NamedRef | null;
+  status: LiveStatus;
+  clockInAt: string | null;
+  clockOutAt: string | null;
+  firstActivityAt: string | null;
+  lastActivityAt: string | null;
+  activeSec: number;
+  idleSec: number;
+  productiveSec: number;
+  productivePercent: number;
+  currentApp: string | null;
+  currentDomain: string | null;
+  currentCategory: ActivityCategory | null;
+  currentTask: { id: string; title: string; projectName: string | null } | null;
+  location: WorkLocation;
+  lateMinutes: number;
+  deviceName: string | null;
+}
+
+export interface WorkforceSummary {
+  date: string;
+  totalEmployees: number;
+  online: number;
+  activeNow: number;
+  idleNow: number;
+  onBreak: number;
+  offline: number;
+  absent: number;
+  late: number;
+  onLeave: number;
+  remote: number;
+  office: number;
+  avgActivePercent: number;
+  avgProductivePercent: number;
+  totalActiveHours: number;
+  totalOvertimeHours: number;
+  reportsSubmitted: number;
+  reportsMissing: number;
+  openWorkAlerts: number;
+  byDepartment: { departmentId: string; departmentName: string; employees: number; online: number; avgProductivePercent: number; late: number; absent: number }[];
+  topApps: { label: string; category: ActivityCategory; seconds: number }[];
+}
+
+export interface HourBucket {
+  hour: string; // ISO local hour start
+  activeSec: number;
+  idleSec: number;
+  productiveSec: number;
+  neutralSec: number;
+  unproductiveSec: number;
+  topApp: string | null;
+}
+
+export interface AppUsage {
+  label: string;
+  app: string | null;
+  domain: string | null;
+  kind: AppRuleKind;
+  category: ActivityCategory;
+  seconds: number;
+  percent: number;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  clientName: string | null;
+  departmentId: string | null;
+  department?: NamedRef | null;
+  ownerId: string | null;
+  owner?: UserRef | null;
+  status: ProjectStatus;
+  budgetHours: number | null;
+  startDate: string | null;
+  dueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Rollup of tracked time on the project's tasks (if the backend includes it). */
+  trackedSec?: number;
+  _count?: { tasks?: number };
+}
+
+export type ProjectInput = Pick<Project, "name" | "code"> &
+  Partial<Pick<Project, "description" | "clientName" | "departmentId" | "ownerId" | "budgetHours" | "startDate" | "dueDate" | "status">>;
+
+export interface WorkTask {
+  id: string;
+  projectId: string | null;
+  project: { id: string; name: string; code?: string } | null;
+  title: string;
+  description: string | null;
+  source: TaskSource;
+  externalRef: string | null;
+  assigneeId: string | null;
+  assignee: UserRef | null;
+  createdById: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  estimatedMinutes: number | null;
+  trackedSec: number;
+  /** (tracked − estimated) / estimated — as a percentage; null when there is no estimate. */
+  variancePercent: number | null;
+  dueDate: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  delayCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskInput {
+  title: string;
+  projectId?: string | null;
+  description?: string | null;
+  source?: TaskSource;
+  externalRef?: string | null;
+  assigneeId?: string | null;
+  priority?: TaskPriority;
+  estimatedMinutes?: number | null;
+  dueDate?: string | null;
+  status?: TaskStatus;
+}
+
+export interface TaskImportItem {
+  externalRef: string;
+  title: string;
+  description?: string;
+  assigneeEmail?: string;
+  projectCode?: string;
+  estimatedMinutes?: number;
+  dueDate?: string;
+  priority?: TaskPriority;
+}
+
+export interface TimeEntry {
+  id: string;
+  userId: string;
+  taskId: string;
+  task?: { id: string; title: string; project?: { id: string; name: string } | null } | null;
+  startedAt: string;
+  endedAt: string | null;
+  durationSec: number;
+  source: TimeEntrySource;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface DailyReportItemInput {
+  taskId?: string | null;
+  projectName?: string | null;
+  taskTitle: string;
+  workCompleted: string;
+  result: string;
+  pendingWork?: string | null;
+  blocker?: string | null;
+  nextAction?: string | null;
+  evidenceUrl?: string | null;
+  minutesSpent?: number | null;
+}
+
+export interface DailyReportItem extends DailyReportItemInput {
+  id: string;
+  reportId: string;
+  sortOrder: number;
+  task?: { id: string; title: string; status: TaskStatus } | null;
+}
+
+export interface DailyReportAutoDraft {
+  generatedAt: string;
+  tasks: { taskId: string; taskTitle: string; projectName: string | null; minutes: number }[];
+  topApps: { label: string; minutes: number }[];
+  activeMinutes: number;
+  suggestedItems: DailyReportItemInput[];
+}
+
+export interface DailyWorkReport {
+  /** null for an unsaved draft returned by `GET /daily-reports/me/:date`. */
+  id: string | null;
+  userId: string;
+  user?: WorkforceUserRef | null;
+  date: string;
+  status: DailyReportStatus;
+  summary: string | null;
+  autoDraft: Partial<DailyReportAutoDraft> | null;
+  submittedAt: string | null;
+  reviewerId: string | null;
+  reviewer?: UserRef | null;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  items: DailyReportItem[];
+}
+
+/** Row of `GET /daily-reports` — a real report, or a `missing` pseudo-row for a user without one. */
+export type TeamReportRow = Partial<Omit<DailyWorkReport, "user" | "status" | "date" | "id">> & {
+  id: string | null;
+  user: WorkforceUserRef;
+  date: string;
+  status: DailyReportStatus | "MISSING";
+  missing?: boolean;
+};
+
+export interface Screenshot {
+  id: string;
+  capturedAt: string;
+  width: number;
+  height: number;
+  blurred: boolean;
+  activeApp: string | null;
+  taskTitle: string | null;
+}
+
+export type ReportConsistencyStatus = "CONSISTENT" | "PARTIAL" | "INCONSISTENT" | "NO_REPORT";
+export type WorkloadLevel = "UNDER_UTILIZED" | "BALANCED" | "OVERLOADED";
+
+export interface EmployeeInsight {
+  summary: string;
+  accomplishments: string[];
+  blockers: { description: string; evidence: string }[];
+  reportConsistency: { status: ReportConsistencyStatus; notes: string[] };
+  nonValueWork: { pattern: string; minutes: number; suggestion: string }[];
+  workload: WorkloadLevel;
+  workloadReason: string;
+  processImprovements: string[];
+  riskFlags: string[];
+  managerNote: string;
+}
+
+export interface ManagementInsight {
+  headline: string;
+  overview: string;
+  highlights: string[];
+  concerns: string[];
+  overloaded: { name: string; reason: string }[];
+  underUtilized: { name: string; reason: string }[];
+  blockers: { name: string; blocker: string }[];
+  reportGaps: string[];
+  processImprovements: string[];
+  recommendedActions: string[];
+}
+
+export interface AiInsight<C = EmployeeInsight | ManagementInsight> {
+  id: string;
+  type: AiInsightType;
+  date: string;
+  userId: string | null;
+  user?: WorkforceUserRef | null;
+  departmentId: string | null;
+  department?: NamedRef | null;
+  status: AiInsightStatus;
+  content: Partial<C> | null;
+  model: string | null;
+  batchId: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface AiStatus {
+  enabled: boolean;
+  model: string | null;
+  lastRun: {
+    date: string;
+    batchId: string | null;
+    status: string;
+    employees: number;
+    succeeded: number;
+    failed: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+  } | null;
+}
+
+export interface EmployeeDayTask {
+  id: string;
+  title: string;
+  projectName: string | null;
+  trackedSecToday: number;
+  estimatedMinutes: number | null;
+  status: TaskStatus;
+}
+
+export interface EmployeeDay {
+  user: WorkforceUserRef;
+  session: WorkSession | null;
+  timeline: HourBucket[];
+  apps: AppUsage[];
+  clockEvents: ClockEvent[];
+  tasks: EmployeeDayTask[];
+  report: DailyWorkReport | null;
+  screenshotsCount: number;
+  aiInsight: AiInsight<EmployeeInsight> | null;
+  alerts: Alert[];
+}
+
+export interface WorkforceMe {
+  policy: WorkforcePolicyPublic;
+  today: WorkSession | null;
+  status: LiveStatus;
+  runningTimer: TimeEntry | null;
+  trackingNotice: string | null;
+}
+
+export interface WorkforceAnalyticsRow {
+  key: string;
+  label: string;
+  activePercent: number;
+  idlePercent: number;
+  productivePercent: number;
+  focusHours: number;
+  meetingHours: number;
+  activeHours: number;
+  overtimeHours: number;
+  taskCompletionPercent: number;
+  tasksCompleted: number;
+  tasksTotal: number;
+}
+
+export interface WorkforceAnalytics {
+  rows: WorkforceAnalyticsRow[];
+  trend: { date: string; activePercent: number; productivePercent: number; idlePercent: number }[];
+}
+
+export interface HrmsSettings {
+  enabled: boolean;
+  webhookUrl: string | null;
+  /** Write-only: never returned in clear. Some backends return a masked value or `authHeaderSet`. */
+  authHeader?: string | null;
+  authHeaderSet?: boolean;
+  sendDailyAt: string;
+}

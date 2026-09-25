@@ -28,6 +28,8 @@ cp packaging/linux/install.sh      "$OUT/install.sh"
 cp packaging/linux/uninstall.sh    "$OUT/uninstall.sh"
 cp packaging/macos/install.sh      "$OUT/install-macos.sh"
 cp packaging/macos/uninstall.sh    "$OUT/uninstall-macos.sh"
+# Chrome/Edge extension (hostname-only activity reporting), for admins to pack/deploy
+go run ./scripts/zipdir packaging/browser-extension "$OUT/sem-browser-extension.zip"
 chmod 0644 "$OUT"/*.ps1
 chmod 0755 "$OUT"/*.sh "$OUT"/sem-agent-linux-* "$OUT"/sem-agent-darwin-* 2>/dev/null || true
 
@@ -35,9 +37,9 @@ chmod 0755 "$OUT"/*.sh "$OUT"/sem-agent-linux-* "$OUT"/sem-agent-darwin-* 2>/dev
   cd "$OUT"
   rm -f checksums.txt
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum sem-agent-* install.ps1 install.sh install-macos.sh uninstall.ps1 uninstall.sh uninstall-macos.sh > checksums.txt.tmp
+    sha256sum sem-agent-* install.ps1 install.sh install-macos.sh uninstall.ps1 uninstall.sh uninstall-macos.sh sem-browser-extension.zip > checksums.txt.tmp
   else
-    shasum -a 256 sem-agent-* install.ps1 install.sh install-macos.sh uninstall.ps1 uninstall.sh uninstall-macos.sh > checksums.txt.tmp
+    shasum -a 256 sem-agent-* install.ps1 install.sh install-macos.sh uninstall.ps1 uninstall.sh uninstall-macos.sh sem-browser-extension.zip > checksums.txt.tmp
   fi
   mv checksums.txt.tmp checksums.txt
 )

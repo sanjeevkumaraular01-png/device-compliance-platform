@@ -19,6 +19,7 @@ type Options struct {
 	ToStderr bool   // also log to stderr (foreground runs)
 	Level    string // debug|info|warn|error (default info; env SEM_AGENT_LOG_LEVEL overrides)
 	File     bool   // write to the rotated log file
+	Dir      string // log directory (default: platform.LogDir()); the user helper logs per user
 }
 
 // Setup installs and returns the default logger. The returned closer flushes
@@ -27,7 +28,10 @@ func Setup(o Options) (*slog.Logger, io.Closer) {
 	var writers []io.Writer
 	var closer io.Closer = nopCloser{}
 	if o.File {
-		dir := platform.LogDir()
+		dir := o.Dir
+		if dir == "" {
+			dir = platform.LogDir()
+		}
 		if err := os.MkdirAll(dir, 0o700); err == nil {
 			lj := &lumberjack.Logger{
 				Filename:   filepath.Join(dir, "agent.log"),

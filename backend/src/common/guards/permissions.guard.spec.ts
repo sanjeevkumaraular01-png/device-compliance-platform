@@ -47,13 +47,26 @@ describe('permission matrix (docs/API.md)', () => {
   it('SUPER_ADMIN has every permission', () => {
     expect(defaultPermissionsFor('SUPER_ADMIN')).toEqual([...PERMISSIONS]);
   });
-  it('EMPLOYEE has only devices:read, usb:request, compliance:read, dashboard:read', () => {
-    expect(defaultPermissionsFor('EMPLOYEE').sort()).toEqual(['compliance:read', 'dashboard:read', 'devices:read', 'usb:request']);
+  it('EMPLOYEE has only devices:read, usb:request, compliance:read, dashboard:read (+ workforce:self)', () => {
+    expect(defaultPermissionsFor('EMPLOYEE').sort()).toEqual(['compliance:read', 'dashboard:read', 'devices:read', 'usb:request', 'workforce:self']);
   });
-  it('AUDITOR is read-only (plus reports:create)', () => {
+  it('AUDITOR is read-only (plus reports:create and own workforce data)', () => {
     const p = defaultPermissionsFor('AUDITOR');
-    expect(p.filter((x) => !x.endsWith(':read'))).toEqual(['reports:create']);
+    expect(p.filter((x) => !x.endsWith(':read'))).toEqual(['reports:create', 'workforce:self']);
     expect(p).toContain('audit:read');
+    expect(p).toContain('workforce:read');
+  });
+  it('workforce matrix (docs/WORKFORCE.md)', () => {
+    expect(defaultPermissionsFor('HR_MANAGER').sort()).toEqual([
+      'alerts:read', 'dashboard:read', 'reports:create', 'reports:read', 'tasks:manage', 'users:read',
+      'workforce:ai', 'workforce:manage', 'workforce:read', 'workforce:self',
+    ]);
+    expect(defaultPermissionsFor('DEPARTMENT_MANAGER')).toEqual(expect.arrayContaining(['workforce:read', 'workforce:screenshots', 'workforce:ai', 'tasks:manage']));
+    expect(defaultPermissionsFor('IT_ADMIN')).toEqual(expect.arrayContaining(['workforce:manage', 'tasks:manage']));
+    expect(defaultPermissionsFor('IT_ADMIN')).not.toContain('workforce:read');
+    expect(defaultPermissionsFor('SECURITY_ADMIN').filter((p) => p.startsWith('workforce:') || p.startsWith('tasks:'))).toEqual(['workforce:self']);
+    expect(defaultPermissionsFor('COMPLIANCE_OFFICER')).toEqual(expect.arrayContaining(['workforce:read', 'workforce:ai']));
+    expect(defaultPermissionsFor('COMPLIANCE_OFFICER')).not.toContain('workforce:screenshots');
   });
   it('spot checks', () => {
     expect(defaultPermissionsFor('DEPARTMENT_MANAGER')).toContain('usb:approve');

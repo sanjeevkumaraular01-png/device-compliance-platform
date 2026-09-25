@@ -13,6 +13,7 @@ set -euo pipefail
 
 SERVER=""
 TOKEN=""
+EXT_IDS=()
 INSECURE=0
 CA_FILE=""
 ARCH=""
@@ -29,6 +30,7 @@ while [ $# -gt 0 ]; do
     --token) TOKEN="${2:-}"; shift 2 ;;
     --token=*) TOKEN="${1#*=}"; shift ;;
     --insecure-skip-verify) INSECURE=1; shift ;;
+    --extension-id) EXT_IDS+=(--extension-id "${2:-}"); shift 2 ;;
     --ca-file) CA_FILE="${2:-}"; shift 2 ;;
     --arch) ARCH="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,13p' "$0" 2>/dev/null || true; exit 0 ;;
@@ -138,5 +140,7 @@ systemctl daemon-reload
 systemctl enable --now sem-agent.service
 sleep 2
 systemctl --no-pager --lines=0 status sem-agent.service || true
+# Per-user activity helper (starts at graphical logon) + browser native host.
+"$BIN" integration install "${EXT_IDS[@]}" </dev/null || log "warning: activity helper not registered"
 "$BIN" status </dev/null || true
 log "SecureEndpoint agent installed."

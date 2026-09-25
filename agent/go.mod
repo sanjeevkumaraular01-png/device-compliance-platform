@@ -9,3 +9,5 @@ require (
 	golang.org/x/sys v0.28.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
+
+require github.com/Microsoft/go-winio v0.6.2

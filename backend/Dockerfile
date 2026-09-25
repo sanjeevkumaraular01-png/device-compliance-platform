@@ -31,6 +31,7 @@ ENV NODE_ENV=production \
     PORT=4000 \
     APP_ROLE=all \
     REPORTS_DIR=/data/reports \
+    SCREENSHOTS_DIR=/data/screenshots \
     CA_CERT_PATH=/data/pki/ca.crt \
     CA_KEY_PATH=/data/pki/ca.key
 RUN apk add --no-cache tini wget
@@ -40,7 +41,7 @@ COPY --from=build --chown=node:node /app/prisma ./prisma
 COPY --chown=node:node package.json prisma.config.ts docker-entrypoint.sh ./
 RUN sed -i 's/\r$//' docker-entrypoint.sh \
  && chmod 0755 docker-entrypoint.sh \
- && mkdir -p /data/reports /data/pki \
+ && mkdir -p /data/reports /data/screenshots /data/pki \
  && chown -R node:node /data
 USER node
 VOLUME ["/data"]

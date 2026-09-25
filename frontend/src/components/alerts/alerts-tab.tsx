@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { BellOff, Check, CheckCheck } from "lucide-react";
+import { BellOff, Check, CheckCheck, UserRound } from "lucide-react";
 import { DataTable } from "@/components/data-table/data-table";
 import { ClearFiltersButton, FilterSelect, enumOptions } from "@/components/data-table/filters";
 import { SeverityBadge, StatusBadge } from "@/components/common/status-badges";
@@ -23,8 +24,18 @@ const SEVERITY_DESC = [...ALERT_SEVERITIES].reverse();
 export function AlertsTab() {
   const { can } = useAuth();
   const canWrite = can("alerts:write");
+  const canWorkforce = can("workforce:read");
+  const searchParams = useSearchParams();
+  const initialCategory = searchParams.get("category");
   const list = useListQuery<Alert>("alerts", "/alerts", {
-    initial: { sortBy: "lastOccurredAt", sortOrder: "desc", filters: { status: "OPEN" } },
+    initial: {
+      sortBy: "lastOccurredAt",
+      sortOrder: "desc",
+      filters: {
+        status: "OPEN",
+        category: initialCategory && (ALERT_CATEGORIES as readonly string[]).includes(initialCategory) ? initialCategory : undefined,
+      },
+    },
     refetchInterval: 30_000,
   });
   const [openId, setOpenId] = React.useState<string | null>(null);
@@ -65,11 +76,26 @@ export function AlertsTab() {
       },
       {
         id: "device",
-        header: "Endpoint",
+        header: "Endpoint / employee",
         enableSorting: false,
-        meta: { label: "Endpoint" },
+        meta: { label: "Endpoint / employee" },
         cell: ({ row }) =>
-          row.original.deviceId ? (
+          row.original.subjectUserId && !canWorkforce ? (
+            <span className="inline-flex items-center gap-1 whitespace-nowrap font-medium" title={row.original.subjectUser?.email}>
+              <UserRound className="size-3.5 text-muted-foreground" aria-hidden />
+              {row.original.subjectUser?.displayName ?? "Employee"}
+            </span>
+          ) : row.original.subjectUserId ? (
+            <Link
+              href={`/workforce/people/${row.original.subjectUserId}`}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 whitespace-nowrap font-medium hover:text-primary hover:underline"
+              title={row.original.subjectUser?.email}
+            >
+              <UserRound className="size-3.5 text-muted-foreground" aria-hidden />
+              {row.original.subjectUser?.displayName ?? "Employee"}
+            </Link>
+          ) : row.original.deviceId ? (
             <Link
               href={`/devices/${row.original.deviceId}`}
               onClick={(e) => e.stopPropagation()}
@@ -106,7 +132,7 @@ export function AlertsTab() {
         cell: ({ row }) => <span className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(row.original.createdAt)}</span>,
       },
     ],
-    [],
+    [canWorkforce],
   );
 
   return (

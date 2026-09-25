@@ -18,6 +18,7 @@ import {
   TopViolationsWidget,
 } from "@/components/dashboard/widgets";
 import { formatNumber } from "@/lib/format";
+import { WorkforceTeaser } from "@/components/workforce/workforce-teaser";
 
 export function AdminDashboard() {
   const qc = useQueryClient();
@@ -59,6 +60,8 @@ export function AdminDashboard() {
       />
 
       <KpiGrid />
+
+      <WorkforceTeaser />
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-3">
         <ComplianceTrendWidget className="xl:col-span-2" />

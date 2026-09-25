@@ -11,6 +11,8 @@ BIN=/usr/local/bin/sem-agent
 systemctl disable --now sem-agent.service 2>/dev/null || true
 # Remove USB restrictions (udev rules, deauthorised interfaces).
 [ -x "$BIN" ] && "$BIN" reset-usb || true
+[ -x "$BIN" ] && "$BIN" integration uninstall || true
+pkill -f "sem-agent user-helper" 2>/dev/null || true
 rm -f /etc/udev/rules.d/99-sem-usb.rules
 command -v udevadm >/dev/null 2>&1 && udevadm control --reload-rules || true
 rm -f /etc/systemd/system/sem-agent.service /lib/systemd/system/sem-agent.service

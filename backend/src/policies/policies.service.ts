@@ -10,6 +10,7 @@ import { QUEUE_COMPLIANCE } from '../queues/queues';
 import { AssignPolicyDto, CreatePolicyDto, UpdatePolicyDto } from './policies.dto';
 import { deviceScope } from '../common/scope';
 import type { AuthUser } from '../common/types';
+import type { AgentWorkforcePolicy } from '../workforce/ingest.service';
 
 export type PolicySource = 'device' | 'department' | 'default';
 
@@ -39,6 +40,8 @@ export interface AgentPolicy {
   screenLock: { enabled: boolean; timeoutSec: number; requirePassword: boolean; screenSaver: boolean };
   checkinIntervalSec: number;
   inventoryIntervalSec: number;
+  /** Workforce tracking settings (docs/WORKFORCE.md); added by the agent service. */
+  workforce?: AgentWorkforcePolicy | null;
 }
 
 interface DeviceRef {

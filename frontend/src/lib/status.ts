@@ -2,6 +2,17 @@
 // CRITICAL red · HIGH orange · MEDIUM amber · LOW blue · NONE/COMPLIANT green · UNKNOWN gray.
 
 import type {
+  ActivityCategory,
+  AiInsightStatus,
+  AttendanceStatus,
+  DailyReportStatus,
+  LiveStatus,
+  ProjectStatus,
+  ReportConsistencyStatus,
+  TaskPriority,
+  TaskStatus,
+  WorkLocation,
+  WorkloadLevel,
   AlertSeverity,
   AlertStatus,
   CommandStatus,
@@ -208,3 +219,110 @@ export function rateTone(rate: number): Tone {
 }
 
 export const RISK_ORDER: RiskLevel[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"];
+
+// ─────────────────────────────── Workforce ───────────────────────────────
+
+
+
+/** Productivity category: PRODUCTIVE green · NEUTRAL blue · UNPRODUCTIVE amber · BLOCKED red · UNCATEGORIZED gray. */
+export const categoryMeta: Record<ActivityCategory, StatusMeta> = {
+  PRODUCTIVE: { label: "Productive", tone: "success" },
+  NEUTRAL: { label: "Neutral", tone: "low" },
+  UNPRODUCTIVE: { label: "Unproductive", tone: "medium" },
+  BLOCKED: { label: "Blocked", tone: "critical" },
+  UNCATEGORIZED: { label: "Uncategorized", tone: "unknown" },
+};
+
+export const liveStatusMeta: Record<LiveStatus, StatusMeta> = {
+  ONLINE_ACTIVE: { label: "Active", tone: "success" },
+  ONLINE_IDLE: { label: "Idle", tone: "medium" },
+  ON_BREAK: { label: "On break", tone: "info" },
+  OFFLINE: { label: "Offline", tone: "unknown" },
+  CLOCKED_OUT: { label: "Clocked out", tone: "neutral" },
+};
+
+export const attendanceMeta: Record<AttendanceStatus, StatusMeta & { short: string }> = {
+  PRESENT: { label: "Present", tone: "success", short: "P" },
+  LATE: { label: "Late", tone: "medium", short: "L" },
+  HALF_DAY: { label: "Half day", tone: "high", short: "HD" },
+  ABSENT: { label: "Absent", tone: "critical", short: "A" },
+  ON_LEAVE: { label: "On leave", tone: "info", short: "LV" },
+  HOLIDAY: { label: "Holiday", tone: "primary", short: "H" },
+  WEEKEND: { label: "Weekly off", tone: "neutral", short: "WO" },
+};
+
+export const locationMeta: Record<WorkLocation, StatusMeta> = {
+  OFFICE: { label: "Office", tone: "primary" },
+  REMOTE: { label: "Remote", tone: "info" },
+  UNKNOWN: { label: "Unknown", tone: "unknown" },
+};
+
+export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {
+  TODO: { label: "To do", tone: "neutral" },
+  IN_PROGRESS: { label: "In progress", tone: "info" },
+  BLOCKED: { label: "Blocked", tone: "critical" },
+  IN_REVIEW: { label: "In review", tone: "medium" },
+  DONE: { label: "Done", tone: "success" },
+  CANCELLED: { label: "Cancelled", tone: "unknown" },
+};
+
+export const taskPriorityMeta: Record<TaskPriority, StatusMeta> = {
+  URGENT: { label: "Urgent", tone: "critical" },
+  HIGH: { label: "High", tone: "high" },
+  MEDIUM: { label: "Medium", tone: "medium" },
+  LOW: { label: "Low", tone: "low" },
+};
+
+export const projectStatusMeta: Record<ProjectStatus, StatusMeta> = {
+  PLANNED: { label: "Planned", tone: "neutral" },
+  ACTIVE: { label: "Active", tone: "success" },
+  ON_HOLD: { label: "On hold", tone: "medium" },
+  COMPLETED: { label: "Completed", tone: "primary" },
+  CANCELLED: { label: "Cancelled", tone: "unknown" },
+};
+
+export const dailyReportStatusMeta: Record<DailyReportStatus | "MISSING", StatusMeta> = {
+  DRAFT: { label: "Draft", tone: "neutral" },
+  SUBMITTED: { label: "Submitted", tone: "info" },
+  APPROVED: { label: "Approved", tone: "success" },
+  CHANGES_REQUESTED: { label: "Changes requested", tone: "medium" },
+  MISSING: { label: "Missing", tone: "critical" },
+};
+
+export const aiInsightStatusMeta: Record<AiInsightStatus, StatusMeta> = {
+  PENDING: { label: "Pending", tone: "medium" },
+  READY: { label: "Ready", tone: "success" },
+  FAILED: { label: "Failed", tone: "critical" },
+  SKIPPED: { label: "Skipped", tone: "unknown" },
+};
+
+export const workloadMeta: Record<WorkloadLevel, StatusMeta> = {
+  UNDER_UTILIZED: { label: "Under-utilized", tone: "medium" },
+  BALANCED: { label: "Balanced", tone: "success" },
+  OVERLOADED: { label: "Overloaded", tone: "critical" },
+};
+
+export const reportConsistencyMeta: Record<ReportConsistencyStatus, StatusMeta> = {
+  CONSISTENT: { label: "Consistent", tone: "success" },
+  PARTIAL: { label: "Partial", tone: "medium" },
+  INCONSISTENT: { label: "Inconsistent", tone: "critical" },
+  NO_REPORT: { label: "No report", tone: "unknown" },
+};
+
+/** Productive % → tone (higher is better). */
+export function productiveTone(pctValue: number | null | undefined): Tone {
+  if (pctValue === null || pctValue === undefined || Number.isNaN(pctValue)) return "unknown";
+  if (pctValue >= 70) return "success";
+  if (pctValue >= 50) return "low";
+  if (pctValue >= 30) return "medium";
+  return "critical";
+}
+
+/** Time variance % (actual vs estimate; positive = over estimate) → tone. */
+export function varianceTone(v: number | null | undefined): Tone {
+  if (v === null || v === undefined || Number.isNaN(v)) return "unknown";
+  if (v <= 10) return "success";
+  if (v <= 25) return "medium";
+  if (v <= 50) return "high";
+  return "critical";
+}

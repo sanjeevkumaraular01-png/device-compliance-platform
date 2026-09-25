@@ -20,6 +20,7 @@ enum RoleKey {
   DEPARTMENT_MANAGER
   EMPLOYEE
   AUDITOR
+  HR_MANAGER
 }
 
 enum AuthProvider {
@@ -176,6 +177,7 @@ enum AlertCategory {
   AUTH
   DEVICE
   SYSTEM
+  WORKFORCE
 }
 
 enum AlertChannelType {
@@ -270,18 +272,23 @@ model Role {
 }
 
 model Department {
-  id          String        @id @default(uuid()) @db.Uuid
-  name        String        @unique
-  code        String        @unique
-  description String?
-  managerId   String?       @map("manager_id") @db.Uuid
-  manager     User?         @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
-  policyId    String?       @map("policy_id") @db.Uuid
-  policy      DevicePolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
-  users       User[]        @relation("DepartmentMembers")
-  devices     Device[]
+  id                String           @id @default(uuid()) @db.Uuid
+  name              String           @unique
+  code              String           @unique
+  description       String?
+  managerId         String?          @map("manager_id") @db.Uuid
+  manager           User?            @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
+  policyId          String?          @map("policy_id") @db.Uuid
+  policy            DevicePolicy?    @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  users             User[]           @relation("DepartmentMembers")
+  devices           Device[]
+  workforcePolicyId String?          @map("workforce_policy_id") @db.Uuid
+  workforcePolicy   WorkforcePolicy? @relation(fields: [workforcePolicyId], references: [id], onDelete: SetNull)
+  projects          Project[]
+  appRules          AppRule[]
+  aiInsights        AiInsight[]
 
   @@map("departments")
 }
@@ -320,6 +327,21 @@ model User {
   usbRequests        UsbAccessRequest[] @relation("UsbRequester")
   usbDecisions       UsbAccessRequest[] @relation("UsbApprover")
   reports            Report[]
+
+  // Workforce
+  workSessions     WorkSession[]
+  clockEvents      ClockEvent[]
+  activitySegments ActivitySegment[]
+  activityHourly   ActivityHourly[]
+  screenshots      Screenshot[]
+  ownedProjects    Project[]         @relation("ProjectOwner")
+  assignedTasks    WorkTask[]        @relation("TaskAssignee")
+  createdTasks     WorkTask[]        @relation("TaskCreator")
+  timeEntries      TimeEntry[]
+  dailyReports     DailyWorkReport[] @relation("ReportAuthor")
+  reviewedReports  DailyWorkReport[] @relation("ReportReviewer")
+  aiInsights       AiInsight[]
+  workAlerts       Alert[]           @relation("AlertSubjectUser")
 
   @@unique([authProvider, externalId])
   @@index([roleId])
@@ -429,6 +451,8 @@ model Device {
   complianceResults ComplianceResult[]
   alerts            Alert[]
   commands          DeviceCommand[]
+  activitySegments  ActivitySegment[]
+  screenshots       Screenshot[]
 
   @@index([platform])
   @@index([complianceState])
@@ -800,6 +824,9 @@ model Alert {
   id               String        @id @default(uuid()) @db.Uuid
   deviceId         String?       @map("device_id") @db.Uuid
   device           Device?       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  // Employee the alert is about (workforce alerts)
+  subjectUserId    String?       @map("subject_user_id") @db.Uuid
+  subjectUser      User?         @relation("AlertSubjectUser", fields: [subjectUserId], references: [id], onDelete: Cascade)
   category         AlertCategory
   severity         AlertSeverity
   status           AlertStatus   @default(OPEN)
@@ -935,4 +962,457 @@ model SystemSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("system_settings")
+}
+
+// ═════════════════════════════ Workforce ═════════════════════════════
+// Productivity, attendance, tasks, daily reports and AI work intelligence.
+// Privacy by design: no keystroke content is ever collected (only input-event
+// counts), screenshots are opt-in per policy and blurred on the device by
+// default, and employees can always see their own data.
+
+enum ActivityCategory {
+  PRODUCTIVE
+  NEUTRAL
+  UNPRODUCTIVE
+  BLOCKED
+  UNCATEGORIZED
+}
+
+enum AppRuleKind {
+  APP
+  WEBSITE
+}
+
+enum WorkLocation {
+  OFFICE
+  REMOTE
+  UNKNOWN
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  HALF_DAY
+  ABSENT
+  ON_LEAVE
+  HOLIDAY
+  WEEKEND
+}
+
+enum ClockEventType {
+  CLOCK_IN
+  CLOCK_OUT
+  BREAK_START
+  BREAK_END
+  LOCK
+  UNLOCK
+  LOGON
+  LOGOFF
+  SLEEP
+  WAKE
+}
+
+enum ClockSource {
+  AGENT
+  WEB
+  MANUAL_CORRECTION
+}
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  IN_REVIEW
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskSource {
+  MANUAL
+  SALES_CRM
+  SUPPORT
+  DEVELOPMENT
+  MARKETING
+  HR
+  HARDWARE
+  NETWORK
+  FINANCE
+  OTHER
+}
+
+enum TimeEntrySource {
+  TIMER
+  AGENT_AUTO
+  MANUAL
+}
+
+enum DailyReportStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+enum AiInsightType {
+  EMPLOYEE_DAILY
+  MANAGEMENT_DAILY
+}
+
+enum AiInsightStatus {
+  PENDING
+  READY
+  FAILED
+  SKIPPED
+}
+
+/// Tracking rules; resolved per user: department.workforcePolicy, else the isDefault policy.
+model WorkforcePolicy {
+  id                       String   @id @default(uuid()) @db.Uuid
+  name                     String   @unique
+  description              String?
+  isDefault                Boolean  @default(false) @map("is_default")
+  trackingEnabled          Boolean  @default(true) @map("tracking_enabled")
+  timezone                 String   @default("Asia/Kolkata")
+  // Work schedule (local time in `timezone`)
+  workDays                 Int[]    @default([1, 2, 3, 4, 5]) @map("work_days") // ISO weekday 1=Mon..7=Sun
+  workStart                String   @default("09:30") @map("work_start") // HH:mm
+  workEnd                  String   @default("18:30") @map("work_end")
+  graceMinutes             Int      @default(15) @map("grace_minutes") // late after workStart + grace
+  minDailyMinutes          Int      @default(480) @map("min_daily_minutes") // missing hours below this
+  halfDayMinutes           Int      @default(240) @map("half_day_minutes")
+  overtimeAfterMinutes     Int      @default(540) @map("overtime_after_minutes")
+  maxBreakMinutes          Int      @default(60) @map("max_break_minutes")
+  trackOutsideWorkHours    Boolean  @default(false) @map("track_outside_work_hours")
+  // Activity
+  idleThresholdSec         Int      @default(300) @map("idle_threshold_sec") // 5 min
+  trackApps                Boolean  @default(true) @map("track_apps")
+  trackWebsites            Boolean  @default(true) @map("track_websites") // domain only, never full URL
+  captureWindowTitles      Boolean  @default(false) @map("capture_window_titles")
+  // Screenshots (opt-in)
+  screenshotsEnabled       Boolean  @default(false) @map("screenshots_enabled")
+  screenshotIntervalMin    Int      @default(15) @map("screenshot_interval_min") // 10 / 15 / 30
+  screenshotBlur           Boolean  @default(true) @map("screenshot_blur") // blurred on the device before upload
+  screenshotRetentionDays  Int      @default(30) @map("screenshot_retention_days")
+  // Location
+  officeNetworks           String[] @default([]) @map("office_networks") // CIDRs of office egress/LAN IPs, or "ssid:<name>"
+  // Discipline
+  requireTaskSelection     Boolean  @default(false) @map("require_task_selection")
+  requireDailyReport       Boolean  @default(true) @map("require_daily_report")
+  dailyReportDueTime       String   @default("19:30") @map("daily_report_due_time")
+  // Alert thresholds
+  alertLateLogin           Boolean  @default(true) @map("alert_late_login")
+  alertNoActivityMinutes   Int      @default(30) @map("alert_no_activity_minutes") // after clock-in
+  alertIdlePercent         Int      @default(40) @map("alert_idle_percent") // of worked time
+  alertOvertimeMinutes     Int      @default(120) @map("alert_overtime_minutes")
+  alertUnproductivePercent Int      @default(30) @map("alert_unproductive_percent")
+  employeeCanSeeOwnData    Boolean  @default(true) @map("employee_can_see_own_data")
+  showTrackingNotice       Boolean  @default(true) @map("show_tracking_notice")
+  version                  Int      @default(1)
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  departments Department[]
+
+  @@map("workforce_policies")
+}
+
+/// Productivity classification of an application or website.
+/// Most specific wins: department rule over global rule; EXACT over CONTAINS over REGEX.
+model AppRule {
+  id           String           @id @default(uuid()) @db.Uuid
+  kind         AppRuleKind
+  pattern      String // process name ("code"), app name ("Visual Studio Code") or domain ("github.com")
+  matchType    MatchType        @default(CONTAINS) @map("match_type")
+  label        String // display name, e.g. "VS Code", "WhatsApp Web"
+  category     ActivityCategory
+  departmentId String?          @map("department_id") @db.Uuid
+  department   Department?      @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  @@unique([kind, pattern, departmentId])
+  @@index([departmentId])
+  @@map("app_rules")
+}
+
+/// One attendance/workday row per user per local date (policy timezone).
+model WorkSession {
+  id                 String           @id @default(uuid()) @db.Uuid
+  userId             String           @map("user_id") @db.Uuid
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date               DateTime         @db.Date
+  status             AttendanceStatus @default(PRESENT)
+  location           WorkLocation     @default(UNKNOWN)
+  clockInAt          DateTime?        @map("clock_in_at")
+  clockOutAt         DateTime?        @map("clock_out_at")
+  firstActivityAt    DateTime?        @map("first_activity_at")
+  lastActivityAt     DateTime?        @map("last_activity_at")
+  activeSec          Int              @default(0) @map("active_sec")
+  idleSec            Int              @default(0) @map("idle_sec")
+  productiveSec      Int              @default(0) @map("productive_sec")
+  neutralSec         Int              @default(0) @map("neutral_sec")
+  unproductiveSec    Int              @default(0) @map("unproductive_sec")
+  breakSec           Int              @default(0) @map("break_sec")
+  meetingSec         Int              @default(0) @map("meeting_sec") // Teams/Zoom/Meet
+  focusSec           Int              @default(0) @map("focus_sec") // productive streaks of 25+ min
+  lateMinutes        Int              @default(0) @map("late_minutes")
+  earlyLeaveMinutes  Int              @default(0) @map("early_leave_minutes")
+  overtimeMinutes    Int              @default(0) @map("overtime_minutes")
+  missingMinutes     Int              @default(0) @map("missing_minutes")
+  currentApp         String?          @map("current_app")
+  currentTaskId      String?          @map("current_task_id") @db.Uuid
+  deviceId           String?          @map("device_id") @db.Uuid
+  isManuallyAdjusted Boolean          @default(false) @map("is_manually_adjusted")
+  adjustmentNote     String?          @map("adjustment_note")
+  adjustedById       String?          @map("adjusted_by_id") @db.Uuid
+  closedAt           DateTime?        @map("closed_at") // set by the nightly close
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  @@unique([userId, date])
+  @@index([date])
+  @@map("work_sessions")
+}
+
+model ClockEvent {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String         @map("user_id") @db.Uuid
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId   String?        @map("device_id") @db.Uuid
+  type       ClockEventType
+  source     ClockSource
+  location   WorkLocation   @default(UNKNOWN)
+  ipAddress  String?        @map("ip_address")
+  note       String?
+  occurredAt DateTime       @map("occurred_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  @@index([userId, occurredAt])
+  @@map("clock_events")
+}
+
+/// Contiguous span on one app/site as reported by the agent (5 min max each).
+/// Never contains keystroke content: only input-event counts.
+model ActivitySegment {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId    String           @map("device_id") @db.Uuid
+  device      Device           @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  startedAt   DateTime         @map("started_at")
+  endedAt     DateTime         @map("ended_at")
+  durationSec Int              @map("duration_sec")
+  active      Boolean // false = idle (no input for idleThresholdSec or more)
+  app         String? // process/app name, e.g. "chrome", "Code", "OUTLOOK"
+  appLabel    String?          @map("app_label") // resolved from AppRule, e.g. "VS Code"
+  domain      String? // website host only (e.g. "github.com"), never path or query
+  windowTitle String?          @map("window_title") // only if policy.captureWindowTitles
+  category    ActivityCategory @default(UNCATEGORIZED)
+  inputEvents Int              @default(0) @map("input_events") // key+mouse event COUNT, no content
+  taskId      String?          @map("task_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, startedAt])
+  @@index([startedAt])
+  @@map("activity_segments")
+}
+
+/// Hour-by-hour rollup used by timelines and analytics (UTC hour buckets).
+model ActivityHourly {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hour            DateTime // truncated to the hour, UTC
+  activeSec       Int      @default(0) @map("active_sec")
+  idleSec         Int      @default(0) @map("idle_sec")
+  productiveSec   Int      @default(0) @map("productive_sec")
+  neutralSec      Int      @default(0) @map("neutral_sec")
+  unproductiveSec Int      @default(0) @map("unproductive_sec")
+  inputEvents     Int      @default(0) @map("input_events")
+  topApp          String?  @map("top_app")
+
+  @@unique([userId, hour])
+  @@index([hour])
+  @@map("activity_hourly")
+}
+
+model Screenshot {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId   String   @map("device_id") @db.Uuid
+  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  capturedAt DateTime @map("captured_at")
+  filePath   String   @map("file_path") // under SCREENSHOTS_DIR, AES-256-GCM encrypted at rest
+  sizeBytes  Int      @map("size_bytes")
+  width      Int
+  height     Int
+  blurred    Boolean
+  activeApp  String?  @map("active_app")
+  taskId     String?  @map("task_id") @db.Uuid
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, capturedAt])
+  @@index([expiresAt])
+  @@map("screenshots")
+}
+
+model Project {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  code         String        @unique
+  description  String?
+  clientName   String?       @map("client_name")
+  departmentId String?       @map("department_id") @db.Uuid
+  department   Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  ownerId      String?       @map("owner_id") @db.Uuid
+  owner        User?         @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  status       ProjectStatus @default(ACTIVE)
+  budgetHours  Int?          @map("budget_hours")
+  startDate    DateTime?     @map("start_date") @db.Date
+  dueDate      DateTime?     @map("due_date") @db.Date
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  tasks WorkTask[]
+
+  @@map("projects")
+}
+
+model WorkTask {
+  id               String       @id @default(uuid()) @db.Uuid
+  projectId        String?      @map("project_id") @db.Uuid
+  project          Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  title            String
+  description      String?
+  source           TaskSource   @default(MANUAL)
+  externalRef      String?      @map("external_ref") // e.g. CRM deal id, ticket number, PR url
+  assigneeId       String?      @map("assignee_id") @db.Uuid
+  assignee         User?        @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdById      String?      @map("created_by_id") @db.Uuid
+  createdBy        User?        @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  status           TaskStatus   @default(TODO)
+  priority         TaskPriority @default(MEDIUM)
+  estimatedMinutes Int?         @map("estimated_minutes") // allocated time
+  trackedSec       Int          @default(0) @map("tracked_sec") // actual time (rollup of TimeEntry)
+  dueDate          DateTime?    @map("due_date")
+  startedAt        DateTime?    @map("started_at")
+  completedAt      DateTime?    @map("completed_at")
+  delayCount       Int          @default(0) @map("delay_count") // times the due date slipped
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  timeEntries TimeEntry[]
+  reportItems DailyReportItem[]
+
+  @@unique([source, externalRef])
+  @@index([assigneeId, status])
+  @@index([projectId])
+  @@map("work_tasks")
+}
+
+model TimeEntry {
+  id          String          @id @default(uuid()) @db.Uuid
+  userId      String          @map("user_id") @db.Uuid
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId      String          @map("task_id") @db.Uuid
+  task        WorkTask        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  startedAt   DateTime        @map("started_at")
+  endedAt     DateTime?       @map("ended_at") // null = timer running (max one per user)
+  durationSec Int             @default(0) @map("duration_sec")
+  source      TimeEntrySource @default(TIMER)
+  note        String?
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([userId, startedAt])
+  @@index([taskId])
+  @@map("time_entries")
+}
+
+/// Structured end-of-day report.
+model DailyWorkReport {
+  id          String            @id @default(uuid()) @db.Uuid
+  userId      String            @map("user_id") @db.Uuid
+  user        User              @relation("ReportAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime          @db.Date
+  status      DailyReportStatus @default(DRAFT)
+  summary     String? // optional free-text overview
+  autoDraft   Json              @default("{}") @map("auto_draft") // generated from tracked activity + tasks
+  submittedAt DateTime?         @map("submitted_at")
+  reviewerId  String?           @map("reviewer_id") @db.Uuid
+  reviewer    User?             @relation("ReportReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewNote  String?           @map("review_note")
+  reviewedAt  DateTime?         @map("reviewed_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  items DailyReportItem[]
+
+  @@unique([userId, date])
+  @@index([date, status])
+  @@map("daily_work_reports")
+}
+
+model DailyReportItem {
+  id            String          @id @default(uuid()) @db.Uuid
+  reportId      String          @map("report_id") @db.Uuid
+  report        DailyWorkReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  taskId        String?         @map("task_id") @db.Uuid
+  task          WorkTask?       @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  projectName   String?         @map("project_name")
+  taskTitle     String          @map("task_title")
+  workCompleted String          @map("work_completed")
+  result        String
+  pendingWork   String?         @map("pending_work")
+  blocker       String?
+  nextAction    String?         @map("next_action")
+  evidenceUrl   String?         @map("evidence_url")
+  minutesSpent  Int?            @map("minutes_spent")
+  sortOrder     Int             @default(0) @map("sort_order")
+
+  @@index([reportId])
+  @@map("daily_report_items")
+}
+
+/// AI Work Intelligence output (Claude). One EMPLOYEE_DAILY per user per day,
+/// one MANAGEMENT_DAILY per department plus one org-wide (departmentId = null).
+model AiInsight {
+  id              String          @id @default(uuid()) @db.Uuid
+  type            AiInsightType
+  date            DateTime        @db.Date
+  userId          String?         @map("user_id") @db.Uuid
+  user            User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId    String?         @map("department_id") @db.Uuid
+  department      Department?     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  status          AiInsightStatus @default(PENDING)
+  content         Json            @default("{}") // validated structured output, see docs/WORKFORCE.md
+  model           String?
+  batchId         String?         @map("batch_id")
+  customId        String?         @unique @map("custom_id")
+  inputTokens     Int?            @map("input_tokens")
+  outputTokens    Int?            @map("output_tokens")
+  cacheReadTokens Int?            @map("cache_read_tokens")
+  error           String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  completedAt     DateTime?       @map("completed_at")
+
+  @@index([date, type])
+  @@index([userId, date])
+  @@map("ai_insights")
 }

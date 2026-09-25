@@ -107,6 +107,51 @@ Patch ids and package names from the server are checked against a strict
 character allow-list before they are passed as arguments. They are never run
 through a shell.
 
+## Workforce activity tracking
+
+Enabled per department by a **Workforce policy** on the server (`docs/WORKFORCE.md`).
+The service runs as SYSTEM/root and cannot see the interactive desktop, so tracking
+runs in a small **per-user helper** started at every graphical logon.
+
+```
+Chrome/Edge extension ──native messaging──► sem-agent (native host) ──► per-user file (hostname only)
+                                                                              │
+sem-agent user-helper (user session) ── samples 1/s ─────────────────────────┘
+        │  newline-delimited JSON over \\.\pipe\sem-agent  |  /var/run/sem-agent.sock
+        ▼
+sem-agent service (SYSTEM/root) ── POST /agent/activity (spooled offline), POST /agent/screenshots
+```
+
+| Collected | Never collected |
+|---|---|
+| Foreground app name (e.g. `chrome`, `Code`, `OUTLOOK`) | What is typed, key codes, clipboard |
+| Whether keyboard/mouse input happened in each second (a count) | Mouse positions, individual keystrokes |
+| Idle / locked state, lock-unlock events | Full URLs, paths, query strings, page content |
+| Active tab **hostname** (with the extension) | Window titles — unless the policy enables `captureWindowTitles` (default off) |
+| Screenshots — only if the policy enables them (default off), only while active in work hours, blurred on the device when `blur` is on (default) | Anything outside work hours or after clock-out (unless `trackOutsideWorkHours`) |
+
+* **Transparency:** once per tracked day the helper shows a notification (Windows balloon,
+  macOS Notification Center, Linux `notify-send`) with the policy's notice text; employees
+  see their own data under **Workforce › My Day** in the console.
+* **Identity:** the service accepts helper connections only from signed-in users (pipe
+  ACL / socket peer credentials on Linux and macOS) and ignores system accounts. The
+  helper never sees the agent token; the service owns the server connection and spool.
+* **Segments:** 1 s samples are merged into segments that split on app, website, title or
+  active/idle change (max 5 min, noise under 2 s dropped) and are sent every 60 s.
+* **Screenshots:** Windows captures via GDI (all monitors); macOS uses `screencapture`
+  (needs the *Screen Recording* permission for `sem-agent`); Linux uses `grim` (Wayland),
+  `gnome-screenshot` or ImageMagick `import`. Images are downscaled to 1600 px, blurred
+  on-device (3-pass box blur, radius 12 px) when required, JPEG q60. The service refuses to
+  upload an un-blurred image when the policy requires blur.
+* **macOS:** app names need no permission; window titles (only if enabled) need
+  *Accessibility*. **Linux:** X11 needs `xprop` + `xprintidle`; on Wayland the foreground
+  app is unknown and idle comes from logind.
+* **Browser extension:** see `packaging/browser-extension/README.md` (deploy with
+  `ExtensionInstallForcelist`, pass its ID to the installer with `--extension-id`).
+* **Debug:** `sem-agent collect --section activity` prints 10 one-second samples
+  (app, idle seconds, input yes/no — never titles). Helper log: the user's cache dir
+  (`%LOCALAPPDATA%\SecureEndpoint\agent.log`, `~/Library/Caches/SecureEndpoint`, `~/.cache/SecureEndpoint`).
+
 ## Required privileges
 
 The agent service runs as **LocalSystem** on Windows and as **root** on Linux

@@ -89,6 +89,14 @@ x-backend-env: &backend-env
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe!Secure2026}
   SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
   DEMO_ACTIVITY: ${DEMO_ACTIVITY:-}
+  # Workforce / AI work intelligence (docs/WORKFORCE.md) — all optional
+  SCREENSHOTS_DIR: ${SCREENSHOTS_DIR:-/data/screenshots}
+  WORKFORCE_TIMEZONE: ${WORKFORCE_TIMEZONE:-Asia/Kolkata}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-claude-opus-5}
+  AI_EFFORT: ${AI_EFFORT:-high}
+  AI_DAILY_RUN_TIME: ${AI_DAILY_RUN_TIME:-20:30}
+  AI_MAX_EMPLOYEES_PER_RUN: ${AI_MAX_EMPLOYEES_PER_RUN:-500}
 
 x-node-healthcheck: &node-healthcheck
   test:

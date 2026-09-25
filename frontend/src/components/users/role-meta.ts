@@ -9,6 +9,7 @@ export const roleMeta: Record<RoleKey, { label: string; tone: Tone; description:
   DEPARTMENT_MANAGER: { label: "Department Manager", tone: "info", description: "Oversees devices and users within their department." },
   EMPLOYEE: { label: "Employee", tone: "neutral", description: "Views own devices and requests USB access." },
   AUDITOR: { label: "Auditor", tone: "low", description: "Read-only access across the console and audit trail." },
+  HR_MANAGER: { label: "HR Manager", tone: "success", description: "Attendance, productivity, daily reports and workforce policies." },
 };
 
 export type UserStatus = "ACTIVE" | "INACTIVE" | "LOCKED";

@@ -322,6 +322,73 @@ type AgentPolicy struct {
 	ScreenLock           ScreenLockPolicy `json:"screenLock"`
 	CheckinIntervalSec   int              `json:"checkinIntervalSec"`
 	InventoryIntervalSec int              `json:"inventoryIntervalSec"`
+	// Workforce is nil when activity tracking is off for this device/user.
+	Workforce *WorkforcePolicy `json:"workforce,omitempty"`
+}
+
+// WorkforcePolicy controls activity tracking (docs/WORKFORCE.md). Privacy rules:
+// no keystroke content, domains only, titles only if allowed, screenshots opt-in.
+type WorkforcePolicy struct {
+	Enabled               bool              `json:"enabled"`
+	IdleThresholdSec      int               `json:"idleThresholdSec"`
+	TrackApps             bool              `json:"trackApps"`
+	TrackWebsites         bool              `json:"trackWebsites"`
+	CaptureWindowTitles   bool              `json:"captureWindowTitles"`
+	Timezone              string            `json:"timezone"`
+	WorkDays              []int             `json:"workDays"` // ISO weekday 1=Mon..7=Sun
+	WorkStart             string            `json:"workStart"`
+	WorkEnd               string            `json:"workEnd"`
+	TrackOutsideWorkHours bool              `json:"trackOutsideWorkHours"`
+	Screenshots           ScreenshotPolicy  `json:"screenshots"`
+	ShowTrackingNotice    bool              `json:"showTrackingNotice"`
+	NoticeText            string            `json:"noticeText"`
+	CurrentTask           *WorkforceTaskRef `json:"currentTask"`
+	ClockedOut            bool              `json:"clockedOut"`
+}
+
+// ScreenshotPolicy is the opt-in screenshot setting.
+type ScreenshotPolicy struct {
+	Enabled     bool `json:"enabled"`
+	IntervalMin int  `json:"intervalMin"`
+	Blur        bool `json:"blur"`
+}
+
+// WorkforceTaskRef is the task the user is currently timing.
+type WorkforceTaskRef struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// ActivitySegment is a contiguous span on one app/site. InputEvents is a COUNT
+// of seconds in which keyboard/mouse input happened; content is never recorded.
+type ActivitySegment struct {
+	StartedAt   string `json:"startedAt"`
+	EndedAt     string `json:"endedAt"`
+	Active      bool   `json:"active"`
+	App         string `json:"app,omitempty"`
+	WindowTitle string `json:"windowTitle,omitempty"`
+	Domain      string `json:"domain,omitempty"`
+	InputEvents int    `json:"inputEvents"`
+}
+
+// SessionEvent is a lock/unlock/logon/logoff/sleep/wake transition.
+type SessionEvent struct {
+	Type string `json:"type"`
+	At   string `json:"at"`
+}
+
+// ActivityNetwork lets the server tag OFFICE vs REMOTE.
+type ActivityNetwork struct {
+	IPs  []string `json:"ips"`
+	SSID string   `json:"ssid,omitempty"`
+}
+
+// ActivityBatch is the body of POST /agent/activity.
+type ActivityBatch struct {
+	OSUser        string            `json:"osUser"`
+	Network       *ActivityNetwork  `json:"network,omitempty"`
+	Segments      []ActivitySegment `json:"segments"`
+	SessionEvents []SessionEvent    `json:"sessionEvents,omitempty"`
 }
 
 // AgentCommand is a server-issued command.

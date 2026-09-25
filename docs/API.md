@@ -71,6 +71,14 @@ Permissions are strings `resource:action`. Role → permission mapping (seeded, 
 Row scoping: DEPARTMENT_MANAGER sees only devices/users/events of their department(s);
 EMPLOYEE sees only devices assigned to them. Enforced server-side.
 
+**Workforce module** — role `HR_MANAGER` (Human Resources) and the permissions `workforce:self`,
+`workforce:read`, `workforce:manage`, `workforce:screenshots`, `workforce:ai`, `tasks:manage` are
+defined in [`docs/WORKFORCE.md`](WORKFORCE.md#roles--permissions-added-to-the-rbac-matrix). HR_MANAGER
+additionally holds `users:read`, `reports:read`, `reports:create`, `dashboard:read`, `alerts:read`
+(it has none of the device/security permissions above). Every existing role gains `workforce:self`.
+Workforce alerts (`category=WORKFORCE`) are visible to DEPARTMENT_MANAGER for employees of their
+department(s). The seed grants the new permissions to existing roles once (`seed.workforcePermsVersion`).
+
 ---
 
 ## Auth — `/auth`
@@ -80,6 +88,7 @@ EMPLOYEE sees only devices assigned to them. Enforced server-side.
 | POST | `/auth/login` | `{ email, password }` | `LoginResponse` |
 | POST | `/auth/ldap/login` | `{ username, password }` | `LoginResponse` (LDAP / Active Directory bind) |
 | GET | `/auth/sso/providers` | – | `[{ id: "azure-ad" \| "oidc", name, loginUrl }]` (only configured ones) |
+| GET | `/auth/methods` | – | `{ local: true, ldap: boolean, sso: SsoProvider[] }` — which sign-in methods are configured; the login page hides the Directory tab when `ldap` is false and shows SSO buttons only for configured providers |
 | GET | `/auth/sso/azure-ad/login` | – | 302 to Microsoft identity platform |
 | GET | `/auth/sso/azure-ad/callback` | – | 302 to `${WEB_URL}/auth/callback#accessToken=..&refreshToken=..` (or `#mfaToken=..`) |
 | GET | `/auth/sso/oidc/login`, `/auth/sso/oidc/callback` | – | generic OIDC, same pattern |
@@ -419,6 +428,8 @@ type AgentPolicy = {
   checkinIntervalSec: number; inventoryIntervalSec: number;
 };
 type AgentCommand = { id: string; type: CommandType; payload: object; expiresAt: string };
+// AgentPolicy also carries `workforce` (tracking settings) and the agent posts to
+// `POST /agent/activity` and `POST /agent/screenshots` — see docs/WORKFORCE.md "Agent protocol additions".
 ```
 
 Command payloads:

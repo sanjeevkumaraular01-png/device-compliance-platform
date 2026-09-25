@@ -8,6 +8,8 @@
  *    state evaluated by the real compliance engine, 30-day compliance history,
  *    USB whitelist/events/requests, alerts, channels, login history, audit trail
  *    (through the hash chain), report rows and a schedule.
+ *  - Workforce (prisma/seed-workforce.ts): policies + app rules always; workforce demo data
+ *    once, guarded by `seed.workforceDemoVersion` (runs even when the core demo marker exists).
  *
  * Runs with ts-node in development (`npm run seed`) and from compiled JS in
  * production (`node dist/prisma/seed.js`).
@@ -37,6 +39,7 @@ import { classifySoftware } from '../src/software/software.classifier';
 import { appendAuditLog, AuditEntryInput } from '../src/audit/audit-chain';
 import { CryptoCore } from '../src/common/crypto.service';
 import { renderCsv, renderPdf, ReportDataset } from '../src/reports/renderers/renderers';
+import { seedWorkforceBase, seedWorkforceDemo, workforceDemoPresent } from './seed-workforce';
 
 const rootClient = new PrismaClient();
 // Rebound to a transaction client while the demo seed runs, so a failed demo seed rolls back completely.
@@ -253,6 +256,9 @@ async function seedBase() {
       });
     }
   }
+
+  const wf = await seedWorkforceBase(prisma, depts);
+  if (wf.rulesCreated) console.log(`  workforce: ${wf.rulesCreated} app/website rules created`);
 
   return { admin, roles, depts, policies: { baseline, engPolicy, finPolicy } };
 }
@@ -1006,6 +1012,17 @@ async function main() {
         },
         { maxWait: 60_000, timeout: 30 * 60_000 },
       );
+    if (!(await workforceDemoPresent(prisma))) {
+      const domain = (env('SEED_ADMIN_EMAIL', 'admin@secureendpoint.local').split('@')[1] || 'secureendpoint.local').toLowerCase();
+      const pwHash = await hashPassword(env('SEED_ADMIN_PASSWORD', 'ChangeMe!Secure2026'));
+      await rootClient.$transaction(
+        async (tx) => {
+          const res = await seedWorkforceDemo(tx as unknown as PrismaClient, { domain, pwHash, now: NOW });
+          console.log(`  workforce demo: ${JSON.stringify(res)}`);
+        },
+        { maxWait: 60_000, timeout: 30 * 60_000 },
+      );
+    } else console.log('  workforce demo data already present - skipping');
   }
   const lastAudit = await prisma.auditLog.findFirst({ orderBy: { id: 'desc' } });
   const occurredAt = new Date(Math.max(Date.now(), (lastAudit?.occurredAt.getTime() ?? 0) + 1));

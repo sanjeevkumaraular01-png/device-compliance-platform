@@ -255,3 +255,10 @@ export async function downloadFile(path: string, fallbackName: string, params?: 
   const blob = await res.blob();
   saveBlob(blob, name);
 }
+
+/** Fetches a binary resource with the auth header (e.g. screenshot images). Caller owns the blob. */
+export async function fetchBlob(path: string, params?: Query, signal?: AbortSignal): Promise<Blob> {
+  const res = await rawRequest(path, { method: "GET", params, signal, headers: { Accept: "image/*,*/*" } });
+  if (!res.ok) throw await parseError(res);
+  return res.blob();
+}

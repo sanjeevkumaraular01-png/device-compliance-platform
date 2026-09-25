@@ -68,7 +68,7 @@ export const envValidationSchema = Joi.object({
   LDAP_SEARCH_FILTER: Joi.string().default('(sAMAccountName={{username}})'),
   LDAP_TLS_REJECT_UNAUTHORIZED: bool(true),
   LDAP_DEFAULT_ROLE: Joi.string()
-    .valid('SUPER_ADMIN', 'SECURITY_ADMIN', 'COMPLIANCE_OFFICER', 'IT_ADMIN', 'DEPARTMENT_MANAGER', 'EMPLOYEE', 'AUDITOR')
+    .valid('SUPER_ADMIN', 'SECURITY_ADMIN', 'COMPLIANCE_OFFICER', 'IT_ADMIN', 'DEPARTMENT_MANAGER', 'EMPLOYEE', 'AUDITOR', 'HR_MANAGER')
     .default('EMPLOYEE'),
   LDAP_GROUP_ROLE_MAP: jsonObject.optional(),
 
@@ -94,5 +94,23 @@ export const envValidationSchema = Joi.object({
   // Defaults to SEED_DEMO_DATA (resolved in AppConfigService), so no Joi default here.
   DEMO_ACTIVITY: Joi.boolean().truthy('true').falsy('false').allow(''),
   RUN_MIGRATIONS: bool(true),
+
+  // Workforce / AI work intelligence (docs/WORKFORCE.md) — all optional
+  SCREENSHOTS_DIR: Joi.string().default('./data/screenshots'),
+  WORKFORCE_TIMEZONE: Joi.string()
+    .default('Asia/Kolkata')
+    .custom((value: string, helpers) => {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: value });
+        return value;
+      } catch {
+        return helpers.error('any.invalid');
+      }
+    }, 'IANA time zone'),
+  ANTHROPIC_API_KEY: Joi.string().allow('').optional(),
+  AI_MODEL: Joi.string().default('claude-opus-5'),
+  AI_EFFORT: Joi.string().valid('low', 'medium', 'high', 'xhigh', 'max').default('high'),
+  AI_DAILY_RUN_TIME: Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).default('20:30'),
+  AI_MAX_EMPLOYEES_PER_RUN: Joi.number().integer().min(1).max(100000).default(500),
   RUN_SEED: bool(true),
 });

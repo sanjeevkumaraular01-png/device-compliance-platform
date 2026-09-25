@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "SecureEndpoint Activity",
+  "short_name": "SecureEndpoint",
+  "version": "1.0.0",
+  "description": "Reports the hostname of the active tab (e.g. github.com) to the SecureEndpoint agent during work hours. Never sends full URLs, page content or anything you type.",
+  "minimum_chrome_version": "110",
+  "permissions": ["tabs", "nativeMessaging", "alarms"],
+  "background": { "service_worker": "background.js" },
+  "icons": { "128": "icon128.png" },
+  "action": { "default_title": "SecureEndpoint: website names are shared with your organization during work hours", "default_icon": { "128": "icon128.png" } }
+}

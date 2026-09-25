@@ -9,6 +9,12 @@ LABEL=com.secureendpoint.agent
 launchctl bootout "system/$LABEL" 2>/dev/null || true
 rm -f "/Library/LaunchDaemons/$LABEL.plist"
 [ -x /usr/local/bin/sem-agent ] && /usr/local/bin/sem-agent reset-usb || true
+[ -x /usr/local/bin/sem-agent ] && /usr/local/bin/sem-agent integration uninstall || true
+# Stop the per-user activity helper in every GUI session
+for uid in $(ps -axo uid=,command= | awk '/sem-agent user-helper/ {print $1}' | sort -u); do
+  launchctl bootout "gui/$uid/com.secureendpoint.agent.user" 2>/dev/null || true
+done
+pkill -f "sem-agent user-helper" 2>/dev/null || true
 rm -f /usr/local/bin/sem-agent
 if [ "$PURGE" = 1 ]; then
   rm -rf "/Library/Application Support/SecureEndpoint" /Library/Logs/SecureEndpoint

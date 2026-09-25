@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Laptop, Loader2, Moon, Sun, Monitor, LogOut } from "lucide-react";
+import { ClipboardList, Laptop, Loader2, Moon, Sun, Monitor, LogOut, Timer } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
   CommandDialog,
@@ -46,19 +46,39 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     return hay.includes(q);
   });
 
+  const workforceActions = (
+    can("workforce:self")
+      ? [
+          { id: "wf-report", label: "Write today's daily report", href: "/workforce/reports", icon: ClipboardList, keywords: "daily report eod end of day submit" },
+          { id: "wf-timer", label: "Start a task timer", href: "/workforce/tasks", icon: Timer, keywords: "timer task time tracking start stop" },
+          { id: "wf-clock", label: "Clock in / out / break", href: "/workforce/me", icon: Sun, keywords: "clock in clock out break attendance my day" },
+        ]
+      : []
+  ).filter((a) => !q || `${a.label} ${a.keywords}`.toLowerCase().includes(q));
+
   const deviceRows = debounced.length >= 2 ? (devices.data ?? []) : [];
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
       <CommandInput value={search} onValueChange={setSearch} placeholder={canDevices ? "Search pages or devices by name…" : "Search pages…"} />
       <CommandList>
-        {pages.length === 0 && deviceRows.length === 0 && !devices.isFetching && <CommandEmpty>No results found.</CommandEmpty>}
+        {pages.length === 0 && workforceActions.length === 0 && deviceRows.length === 0 && !devices.isFetching && <CommandEmpty>No results found.</CommandEmpty>}
         {pages.length > 0 && (
           <CommandGroup heading="Pages">
             {pages.map((p) => (
               <CommandItem key={p.href} value={`page-${p.href}`} onSelect={() => go(p.href)}>
                 <p.icon />
                 <span>{navLabel(p, user?.role)}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {workforceActions.length > 0 && (
+          <CommandGroup heading="Workforce">
+            {workforceActions.map((a) => (
+              <CommandItem key={a.id} value={a.id} onSelect={() => go(a.href)}>
+                <a.icon />
+                <span>{a.label}</span>
               </CommandItem>
             ))}
           </CommandGroup>

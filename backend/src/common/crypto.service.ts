@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { AppConfigService } from '../config/app-config.service';
 
 const VERSION = 'v1';
+const BIN_MAGIC = Buffer.from('SEMB1', 'ascii');
 
 /**
  * AES-256-GCM encryption for secrets at rest (MFA secrets, channel configs,
@@ -32,6 +33,24 @@ export class CryptoCore {
     const decipher = crypto.createDecipheriv('aes-256-gcm', this.key, Buffer.from(ivB64, 'base64'));
     decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
     return Buffer.concat([decipher.update(Buffer.from(ctB64, 'base64')), decipher.final()]).toString('utf8');
+  }
+
+  /** Binary AES-256-GCM: `SEMB1` magic + iv(12) + tag(16) + ciphertext (used for screenshots at rest). */
+  encryptBuffer(plain: Buffer): Buffer {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.key, iv);
+    const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+    return Buffer.concat([BIN_MAGIC, iv, cipher.getAuthTag(), ct]);
+  }
+
+  decryptBuffer(payload: Buffer): Buffer {
+    if (payload.length < BIN_MAGIC.length + 28 || !payload.subarray(0, BIN_MAGIC.length).equals(BIN_MAGIC)) {
+      throw new Error('Invalid encrypted blob');
+    }
+    const o = BIN_MAGIC.length;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', this.key, payload.subarray(o, o + 12));
+    decipher.setAuthTag(payload.subarray(o + 12, o + 28));
+    return Buffer.concat([decipher.update(payload.subarray(o + 28)), decipher.final()]);
   }
 
   encryptJson(value: unknown): string {

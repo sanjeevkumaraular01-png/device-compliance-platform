@@ -38,6 +38,10 @@ import { ReportsModule } from './reports/reports.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
+import { WorkforceModule } from './workforce/workforce.module';
+import { TasksModule } from './tasks/tasks.module';
+import { DailyReportsModule } from './daily-reports/daily-reports.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -116,6 +120,10 @@ import { JobsModule } from './jobs/jobs.module';
     ReportsModule,
     DashboardModule,
     HealthModule,
+    WorkforceModule,
+    TasksModule,
+    DailyReportsModule,
+    AiModule,
     ...(RUN_WORKER ? [JobsModule] : []),
   ],
   providers: [

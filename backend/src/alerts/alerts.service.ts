@@ -6,12 +6,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QUEUE_ALERTS } from '../queues/queues';
 import { orderBy, paginated, skipTake } from '../common/dto/pagination.dto';
-import { isScoped, viaDevice } from '../common/scope';
+import { isScoped, scopedDepartmentIds, viaDevice } from '../common/scope';
 import type { AuthUser } from '../common/types';
 import { AlertQueryDto } from './alerts.dto';
 
 export interface RaiseAlertInput {
   deviceId?: string | null;
+  /** Employee the alert is about (workforce alerts). */
+  subjectUserId?: string | null;
   category: AlertCategory;
   severity: AlertSeverity;
   title: string;
@@ -25,6 +27,7 @@ export const SEVERITY_ORDER: AlertSeverity[] = ['INFO', 'LOW', 'MEDIUM', 'HIGH',
 
 const ALERT_INCLUDE = {
   device: { select: { id: true, deviceName: true, hostname: true, platform: true } },
+  subjectUser: { select: { id: true, displayName: true, email: true, departmentId: true } },
 } satisfies Prisma.AlertInclude;
 
 @Injectable()
@@ -66,6 +69,7 @@ export class AlertsService {
       const alert = await tx.alert.create({
         data: {
           deviceId: input.deviceId ?? null,
+          subjectUserId: input.subjectUserId ?? null,
           category: input.category,
           severity: input.severity,
           title: input.title.substring(0, 300),
@@ -113,7 +117,12 @@ export class AlertsService {
   }
 
   private scopeWhere(user?: AuthUser): Prisma.AlertWhereInput {
-    return isScoped(user) ? viaDevice(user) : {};
+    if (!isScoped(user)) return {};
+    // Managers also see workforce alerts about employees of their department(s).
+    if (user!.roleKey === 'DEPARTMENT_MANAGER') {
+      return { OR: [viaDevice(user), { subjectUser: { departmentId: { in: scopedDepartmentIds(user!) } } }] };
+    }
+    return { OR: [viaDevice(user), { subjectUserId: user!.id }] };
   }
 
   async list(q: AlertQueryDto, user?: AuthUser) {
@@ -122,12 +131,14 @@ export class AlertsService {
     if (q.severity) and.push({ severity: q.severity });
     if (q.category) and.push({ category: q.category });
     if (q.deviceId) and.push({ deviceId: q.deviceId });
+    if (q.subjectUserId) and.push({ subjectUserId: q.subjectUserId });
     if (q.search) {
       and.push({
         OR: [
           { title: { contains: q.search, mode: 'insensitive' } },
           { message: { contains: q.search, mode: 'insensitive' } },
           { device: { deviceName: { contains: q.search, mode: 'insensitive' } } },
+          { subjectUser: { displayName: { contains: q.search, mode: 'insensitive' } } },
         ],
       });
     }

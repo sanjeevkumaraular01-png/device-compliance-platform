@@ -17,6 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { RunningTimerIndicator } from "@/components/workforce/task-timer";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { initials } from "@/lib/utils";
@@ -163,6 +164,7 @@ export function Topbar({ onOpenMobileNav, onOpenCommand }: { onOpenMobileNav: ()
         <span className="hidden md:inline">Search devices, pages…</span>
         <kbd className="ml-auto hidden rounded border bg-muted px-1.5 font-mono text-[10px] md:inline">⌘K</kbd>
       </button>
+      <RunningTimerIndicator />
       <AlertsBell />
       <ThemeToggle />
       <UserMenu />

@@ -41,6 +41,7 @@ type Agent struct {
 	usbw   *usb.Watcher
 	disp   *commands.Dispatcher
 	snap   *software.Snapshot
+	wf     *workforceHub
 
 	mu           sync.Mutex
 	lastSecurity *model.SecurityStatus
@@ -96,6 +97,7 @@ func NewAgent(version string, log *slog.Logger) (*Agent, error) {
 		started:   time.Now(),
 		rnd:       rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
+	a.wf = newWorkforceHub(a)
 	a.usbw = usb.NewWatcher(log, a.sendUsbEvents, func() string { return collector.LoggedInUser(context.Background()) })
 	a.registerHandlers()
 	return a, nil
@@ -148,9 +150,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	a.log.Info("agent starting", "version", a.Version, "deviceId", a.cfg.DeviceID, "server", a.cfg.ServerURL, "platform", collector.Platform())
 	if pol := a.policy(); pol != nil {
 		a.usbw.SetPolicy(pol)
+		a.wf.SetPolicy(pol.Workforce)
 	}
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
+	go func() { defer wg.Done(); a.wf.Serve(ctx) }()
 	go func() { defer wg.Done(); a.usbw.Run(ctx) }()
 	go func() { defer wg.Done(); a.commandWorker(ctx) }()
 
@@ -231,6 +235,8 @@ func (a *Agent) heartbeat(ctx context.Context) {
 		a.log.Info("spool flushed", "delivered", n, "remaining", a.spool.Len(), "err", errString(err))
 	}
 	if resp.Policy != nil {
+		// Workforce fields (clockedOut, currentTask) change without a policy version bump.
+		a.wf.SetPolicy(resp.Policy.Workforce)
 		cur := a.policy()
 		if cur == nil || cur.Version != resp.Policy.Version || cur.PolicyID != resp.Policy.PolicyID {
 			a.log.Info("policy changed", "policyId", resp.Policy.PolicyID, "version", resp.Policy.Version, "name", resp.Policy.Name)

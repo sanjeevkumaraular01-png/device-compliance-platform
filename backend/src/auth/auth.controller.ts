@@ -70,6 +70,13 @@ export class AuthController {
     return this.sso.providers();
   }
 
+  /** Which sign-in methods are configured, so the login page hides the rest. */
+  @Get('methods')
+  @Public()
+  methods() {
+    return { local: true, ldap: this.ldap.enabled, sso: this.sso.providers() };
+  }
+
   @Get('sso/:provider/login')
   @Public()
   @AuthThrottle()

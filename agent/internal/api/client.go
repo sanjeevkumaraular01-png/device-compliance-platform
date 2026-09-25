@@ -16,8 +16,10 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
 	"strconv"
@@ -441,7 +443,67 @@ func (c *Client) Policy(ctx context.Context) (*model.AgentPolicy, error) {
 const (
 	PathUsbEvents      = "/agent/usb-events"
 	PathSoftwareEvents = "/agent/software-events"
+	PathActivity       = "/agent/activity"
 )
+
+// ScreenshotUpload is one blurred-if-required JPEG for POST /agent/screenshots.
+type ScreenshotUpload struct {
+	JPEG       []byte
+	CapturedAt time.Time
+	OSUser     string
+	ActiveApp  string
+	Blurred    bool
+}
+
+// UploadScreenshot sends a screenshot as multipart/form-data. Not spooled:
+// a screenshot that cannot be delivered now is dropped.
+func (c *Client) UploadScreenshot(ctx context.Context, s ScreenshotUpload) error {
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fields := map[string]string{
+		"capturedAt": s.CapturedAt.UTC().Format(time.RFC3339),
+		"osUser":     s.OSUser,
+		"activeApp":  s.ActiveApp,
+		"blurred":    strconv.FormatBool(s.Blurred),
+	}
+	for k, v := range fields {
+		if err := mw.WriteField(k, v); err != nil {
+			return err
+		}
+	}
+	part, err := mw.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="image"; filename="screenshot.jpg"`},
+		"Content-Type":        {"image/jpeg"},
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(s.JPEG); err != nil {
+		return err
+	}
+	if err := mw.Close(); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/agent/screenshots", &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.opts.UserAgent)
+	req.Header.Set("Authorization", "Bearer "+c.opts.Token)
+	req.Header.Set("X-Device-Id", c.opts.DeviceID)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return &APIError{StatusCode: resp.StatusCode, Path: "/agent/screenshots", Message: errorMessage(data)}
+	}
+	return nil
+}
 
 // CommandResultPath returns the result path for a command id.
 func CommandResultPath(id string) string {

@@ -103,6 +103,20 @@ export function AlertDetailSheet({ alertId, onOpenChange }: { alertId: string | 
                       "Not device-specific"
                     ),
                   },
+                  ...(a.subjectUserId
+                    ? [
+                        {
+                          label: "Employee",
+                          value: can("workforce:read") ? (
+                            <Link href={`/workforce/people/${a.subjectUserId}`} className="font-medium hover:text-primary hover:underline">
+                              {a.subjectUser?.displayName ?? "Employee"}
+                            </Link>
+                          ) : (
+                            (a.subjectUser?.displayName ?? "Employee")
+                          ),
+                        },
+                      ]
+                    : []),
                   { label: "Category", value: humanize(a.category) },
                   { label: "Occurrences", value: formatNumber(a.occurrences) },
                   { label: "Last occurred", value: <RelativeTime value={a.lastOccurredAt} /> },

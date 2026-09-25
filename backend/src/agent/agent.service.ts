@@ -16,6 +16,8 @@ import { SoftwareService } from '../software/software.service';
 import { CommandsService } from '../devices/commands.service';
 import { CaService, IssuedCertificate } from '../enrollment/ca.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { WorkforceIngestService } from '../workforce/ingest.service';
+import type { AgentPolicy } from '../policies/policies.service';
 import { randomToken, safeEqual, sha256Hex } from '../common/crypto.service';
 import { toJsonSafe } from '../common/utils/canonical-json';
 import { generateAssetId } from '../devices/devices.service';
@@ -49,7 +51,18 @@ export class AgentService {
     private readonly commands: CommandsService,
     private readonly ca: CaService,
     private readonly metrics: MetricsService,
+    private readonly workforce: WorkforceIngestService,
   ) {}
+
+  /** Device policy + the workforce block (docs/WORKFORCE.md). Workforce errors never break check-ins. */
+  private async agentPolicy(device: { id: string; departmentId: string | null; assignedUserId: string | null; platform: AgentDevice['platform']; policyId: string | null }, loggedInUser?: string | null): Promise<AgentPolicy> {
+    const policy = await this.policies.buildAgentPolicy(device);
+    const workforce = await this.workforce.buildAgentWorkforce(device, loggedInUser).catch((e) => {
+      this.logger.warn(`workforce policy for device ${device.id} failed: ${(e as Error).message}`);
+      return null;
+    });
+    return { ...policy, workforce };
+  }
 
   private hardwareData(h: HardwareInfoDto): Prisma.DeviceUncheckedUpdateInput {
     return {
@@ -194,7 +207,7 @@ export class AgentService {
     if (status !== 'PENDING') {
       await this.compliance.evaluateDevice(device.id).catch((e) => this.logger.warn(`initial evaluation failed: ${e.message}`));
     }
-    const policy = await this.policies.buildAgentPolicy(device);
+    const policy = await this.agentPolicy(device, h.loggedInUser);
     return {
       deviceId: device.id,
       agentToken,
@@ -285,13 +298,13 @@ export class AgentService {
       }
       commands = pending.map((c) => ({ id: c.id, type: c.type, payload: c.payload ?? {}, expiresAt: c.expiresAt.toISOString() }));
     }
-    const policy = await this.policies.buildAgentPolicy(updated);
+    const policy = await this.agentPolicy(updated, dto.loggedInUser);
     return { policy, policyVersion: policy.version, commands, serverTime: now.toISOString() };
   }
 
   async policy(agent: AgentDevice) {
     const d = await this.loadDevice(agent.id);
-    return this.policies.buildAgentPolicy(d);
+    return this.agentPolicy(d);
   }
 
   // ── Full state report ──

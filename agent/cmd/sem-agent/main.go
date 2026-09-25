@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/secureendpoint/agent/internal/activity"
 	"github.com/secureendpoint/agent/internal/api"
 	"github.com/secureendpoint/agent/internal/collector"
 	"github.com/secureendpoint/agent/internal/config"
@@ -40,6 +41,8 @@ Usage:
   sem-agent collect --json       print a full report without sending it [--skip-patches] [--skip-software] [--section hardware|security|software|patches]
   sem-agent usb                  list connected USB devices and the policy decision for each
   sem-agent reset-usb            remove all USB restrictions applied by the agent (used by uninstallers)
+  sem-agent user-helper          per-user activity helper (started at logon; see docs/WORKFORCE.md)
+  sem-agent integration install [--extension-id ID] | uninstall   register helper autostart + browser host
   sem-agent renew-cert           renew the device certificate now (the service also renews 30 days before expiry)
   sem-agent version
 
@@ -51,6 +54,13 @@ func main() {
 		printUsage()
 		os.Exit(2)
 	}
+	// Chrome/Edge launch native messaging hosts with the caller origin as argv[1].
+	if activity.IsNativeHostInvocation(os.Args[1:]) {
+		if err := activity.ServeNativeHost(os.Stdin, os.Stdout); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	cmd, args := os.Args[1], os.Args[2:]
 	var err error
 	switch cmd {
@@ -59,7 +69,13 @@ func main() {
 	case "run":
 		err = cmdRun(args)
 	case "install", "uninstall", "start", "stop", "restart":
-		err = cmdControl(cmd)
+		err = cmdControl(cmd, args)
+	case "integration":
+		err = cmdIntegration(args)
+	case "user-helper":
+		err = cmdUserHelper()
+	case "native-host":
+		err = activity.ServeNativeHost(os.Stdin, os.Stdout)
 	case "status":
 		err = cmdStatus()
 	case "collect":
@@ -228,9 +244,16 @@ func cmdRun(args []string) error {
 	return s.Run()
 }
 
-func cmdControl(action string) error {
+func cmdControl(action string, args []string) error {
 	if err := requireAdmin(action); err != nil {
 		return err
+	}
+	var extIDs []string
+	if action == "install" {
+		var err error
+		if extIDs, err = parseExtensionIDs("install", args); err != nil {
+			return err
+		}
 	}
 	if action == "install" {
 		if _, err := config.Load(""); err != nil {
@@ -241,7 +264,78 @@ func cmdControl(action string) error {
 		return fmt.Errorf("%s %s: %w", action, service.Name(), err)
 	}
 	fmt.Printf("service %s: %s ok\n", service.Name(), action)
+	switch action {
+	case "install":
+		if err := installIntegration(extIDs); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: activity helper autostart / browser host not registered:", err)
+		}
+	case "uninstall":
+		_ = activity.RemoveIntegration()
+	}
 	return nil
+}
+
+// parseExtensionIDs reads --extension-id flags (repeatable) and SEM_EXTENSION_IDS.
+func parseExtensionIDs(name string, args []string) ([]string, error) {
+	var ids []string
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.Func("extension-id", "Chrome/Edge extension ID allowed to talk to the agent (repeatable)", func(v string) error {
+		ids = append(ids, v)
+		return nil
+	})
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	if env := os.Getenv("SEM_EXTENSION_IDS"); env != "" {
+		ids = append(ids, strings.Split(env, ",")...)
+	}
+	return ids, nil
+}
+
+func installIntegration(extIDs []string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if err := activity.InstallIntegration(exe, extIDs); err != nil {
+		return err
+	}
+	fmt.Println("activity helper registered to start at user logon; browser native host registered")
+	return nil
+}
+
+// cmdIntegration registers/removes the per-user helper autostart and the
+// browser native messaging host (used by the Linux/macOS installers, which
+// manage the system service themselves).
+func cmdIntegration(args []string) error {
+	if len(args) == 0 || (args[0] != "install" && args[0] != "uninstall") {
+		return errors.New("usage: sem-agent integration install [--extension-id ID]... | uninstall")
+	}
+	if err := requireAdmin("integration"); err != nil {
+		return err
+	}
+	if args[0] == "uninstall" {
+		return activity.RemoveIntegration()
+	}
+	ids, err := parseExtensionIDs("integration install", args[1:])
+	if err != nil {
+		return err
+	}
+	return installIntegration(ids)
+}
+
+// cmdUserHelper runs the per-user activity helper in the interactive session.
+func cmdUserHelper() error {
+	logDir := os.TempDir()
+	if d, err := os.UserCacheDir(); err == nil {
+		logDir = filepath.Join(d, "SecureEndpoint")
+	}
+	log, closer := logging.Setup(logging.Options{File: true, Dir: logDir})
+	defer closer.Close()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, termSignal())
+	defer stop()
+	log.Info("user helper starting", "user", activity.CurrentUser(), "version", version)
+	return activity.NewHelper(log).Run(ctx)
 }
 
 func cmdStatus() error {
@@ -290,7 +384,7 @@ func cmdCollect(args []string) error {
 	asJSON := fs.Bool("json", true, "print JSON (default)")
 	skipPatches := fs.Bool("skip-patches", false, "skip the (slow) patch scan")
 	skipSoftware := fs.Bool("skip-software", false, "skip the software inventory")
-	section := fs.String("section", "", "print only one section: hardware|security|software|patches")
+	section := fs.String("section", "", "print only one section: hardware|security|software|patches|activity")
 	verbose := fs.Bool("v", false, "debug logging to stderr")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -317,6 +411,8 @@ func cmdCollect(args []string) error {
 		out = c.Software(ctx)
 	case "patches":
 		out = c.Patches(ctx, true)
+	case "activity":
+		out = sampleActivity(ctx, 10)
 	default:
 		return fmt.Errorf("unknown section %q", *section)
 	}
@@ -385,4 +481,27 @@ func cmdResetUSB() error {
 	}
 	fmt.Println("USB restrictions removed")
 	return nil
+}
+
+// sampleActivity takes n one-second samples of the current session for
+// debugging. Window titles are never read or printed.
+func sampleActivity(ctx context.Context, n int) any {
+	type row struct {
+		At      string  `json:"at"`
+		App     string  `json:"app"`
+		IdleSec float64 `json:"idleSec"`
+		Input   bool    `json:"input"`
+		Locked  bool    `json:"locked"`
+	}
+	probe := activity.NewProbe(false)
+	var rows []row
+	for i := 0; i < n; i++ {
+		if s, err := probe.Sample(ctx); err == nil {
+			rows = append(rows, row{At: s.At.Format(time.RFC3339), App: s.App, IdleSec: s.Idle.Seconds(), Input: s.Input, Locked: s.Locked})
+		}
+		if i < n-1 {
+			time.Sleep(time.Second)
+		}
+	}
+	return map[string]any{"samples": rows, "note": "input = keyboard/mouse input occurred in that second; key content is never read"}
 }
