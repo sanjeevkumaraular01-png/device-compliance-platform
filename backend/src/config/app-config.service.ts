@@ -37,6 +37,8 @@ export class AppConfigService {
 
   get nodeEnv() { return this.str('NODE_ENV', 'development'); }
   get isProduction() { return this.nodeEnv === 'production'; }
+  /** Swagger UI at /api/docs: on outside production; opt back in with SWAGGER_ENABLED=true. */
+  get swaggerEnabled() { return this.bool('SWAGGER_ENABLED', !this.isProduction); }
   get port() { return this.num('PORT', 4000); }
   get logLevel() { return this.str('LOG_LEVEL', 'info'); }
   get databaseUrl() { return this.str('DATABASE_URL'); }
@@ -153,6 +155,9 @@ export class AppConfigService {
   }
   /** Keep seeded demo devices "checking in" so a demo install does not go stale. */
   get demoActivity() { return this.bool('DEMO_ACTIVITY', this.bool('SEED_DEMO_DATA', true)); }
+  get seedAdminEmail() { return this.str('SEED_ADMIN_EMAIL', 'admin@secureendpoint.local'); }
+  get seedAdminPassword() { return this.str('SEED_ADMIN_PASSWORD', 'ChangeMe!Secure2026'); }
+  get seedDemoData() { return this.bool('SEED_DEMO_DATA', true); }
 
   // ── Workforce / AI (docs/WORKFORCE.md) ──
   get screenshotsDir() { return this.str('SCREENSHOTS_DIR', './data/screenshots'); }
@@ -165,4 +170,21 @@ export class AppConfigService {
   }
   get aiDailyRunTime() { return this.str('AI_DAILY_RUN_TIME', '20:30'); }
   get aiMaxEmployeesPerRun() { return this.num('AI_MAX_EMPLOYEES_PER_RUN', 500); }
+
+  // ── Self-service deployment (docs/DEPLOY-SELF-ENROLL.md) ──
+  get deployEnabledEnv() { return this.bool('DEPLOY_ENABLED', true); }
+  get deployCompanyName() { return this.str('DEPLOY_COMPANY_NAME', 'Your Company'); }
+  get deployImapHost() { return this.str('DEPLOY_IMAP_HOST'); }
+  get deployImapPort() { return this.num('DEPLOY_IMAP_PORT', 993); }
+  get deployImapSecure() { return this.bool('DEPLOY_IMAP_SECURE', true); }
+  get deployAllowedDomains(): string[] {
+    return this.str('DEPLOY_ALLOWED_DOMAINS')
+      .split(',')
+      .map((d) => d.trim().toLowerCase().replace(/^@/, ''))
+      .filter(Boolean);
+  }
+  get deploySessionTtlMin() { return this.num('DEPLOY_SESSION_TTL_MIN', 20); }
+  get deployDownloadBaseUrl() {
+    return this.str('DEPLOY_DOWNLOAD_BASE_URL', this.agentDownloadBaseUrl).replace(/\/$/, '');
+  }
 }

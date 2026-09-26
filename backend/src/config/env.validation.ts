@@ -112,5 +112,17 @@ export const envValidationSchema = Joi.object({
   AI_EFFORT: Joi.string().valid('low', 'medium', 'high', 'xhigh', 'max').default('high'),
   AI_DAILY_RUN_TIME: Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).default('20:30'),
   AI_MAX_EMPLOYEES_PER_RUN: Joi.number().integer().min(1).max(100000).default(500),
+
+  // Self-service device enrollment (docs/DEPLOY-SELF-ENROLL.md)
+  DEPLOY_ENABLED: bool(true),
+  DEPLOY_COMPANY_NAME: Joi.string().allow('').default('Your Company'),
+  DEPLOY_IMAP_HOST: Joi.string().allow('').default(''),
+  DEPLOY_IMAP_PORT: Joi.number().port().default(993),
+  DEPLOY_IMAP_SECURE: bool(true),
+  DEPLOY_ALLOWED_DOMAINS: Joi.string().allow('').default(''),
+  DEPLOY_SESSION_TTL_MIN: Joi.number().integer().min(5).max(120).default(20),
+  DEPLOY_DOWNLOAD_BASE_URL: Joi.string().allow('').default(''),
+
+  SWAGGER_ENABLED: Joi.boolean().truthy('true').falsy('false').optional(),
   RUN_SEED: bool(true),
 });

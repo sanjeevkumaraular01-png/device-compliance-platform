@@ -90,7 +90,7 @@ export async function createApp(): Promise<NestExpressApplication> {
   app.useGlobalPipes(new AppValidationPipe());
   app.enableShutdownHooks();
 
-  if (RUN_API) {
+  if (RUN_API && config.swaggerEnabled) {
     const doc = new DocumentBuilder()
       .setTitle('SecureEndpoint Manager API')
       .setDescription('Device & software compliance platform REST API and agent protocol (see docs/API.md).')
@@ -108,11 +108,31 @@ export async function createApp(): Promise<NestExpressApplication> {
   return app;
 }
 
+/** Loud, non-fatal warnings for insecure production configuration. */
+function productionSecurityWarnings(config: AppConfigService, logger: Logger) {
+  if (!config.isProduction) return;
+  const warn = (msg: string) => logger.warn(`SECURITY: ${msg}`, 'Bootstrap');
+  if (config.seedAdminPassword === 'ChangeMe!Secure2026') {
+    warn('SEED_ADMIN_PASSWORD is still the built-in default — change it and rotate the admin password now.');
+  }
+  if (config.seedDemoData) {
+    warn('SEED_DEMO_DATA is enabled in production — demo users and fake devices are present. Set SEED_DEMO_DATA=false.');
+  }
+  if (config.swaggerEnabled) {
+    warn('Swagger UI (/api/docs) is enabled in production. Disable it unless intentionally exposed.');
+  }
+  if (!config.corsOrigins.length) {
+    warn('CORS_ORIGINS is empty — browser clients on other origins will be blocked.');
+  }
+}
+
 async function bootstrap() {
   const app = await createApp();
   const config = app.get(AppConfigService);
+  const logger = app.get(Logger);
+  productionSecurityWarnings(config, logger);
   await app.listen(config.port, '0.0.0.0');
-  app.get(Logger).log(`SecureEndpoint backend (role=${APP_ROLE}) listening on :${config.port}`, 'Bootstrap');
+  logger.log(`SecureEndpoint backend (role=${APP_ROLE}) listening on :${config.port}`, 'Bootstrap');
 }
 
 if (require.main === module) {
