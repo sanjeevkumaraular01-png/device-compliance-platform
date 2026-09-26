@@ -47,7 +47,7 @@ x-backend-env: &backend-env
   ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (base64 of 32 bytes)}
   CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
   WEB_URL: ${WEB_URL:-https://localhost}
-  API_PUBLIC_URL: ${API_PUBLIC_URL:-https://localhost/api/v1}
+  API_PUBLIC_URL: ${API_PUBLIC_URL:-https://localhost}
   TRUST_PROXY: ${TRUST_PROXY:-true}
   RATE_LIMIT_TTL: ${RATE_LIMIT_TTL:-60}
   RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
