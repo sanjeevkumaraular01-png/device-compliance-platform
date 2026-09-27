@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/common/misc";
 import { useApiMutation } from "@/hooks/use-api-mutation";
-import { useDepartments } from "@/hooks/use-lookups";
+import { useDepartments, useWorkProfiles } from "@/hooks/use-lookups";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { ROLE_KEYS, type CreateUserInput, type RoleKey, type UpdateUserInput, type User } from "@/types/api";
@@ -34,6 +34,9 @@ const baseFields = {
     .max(50)
     .regex(/^[+()\d\s.-]*$/, "Use digits, spaces and + ( ) - only")
     .optional(),
+  employeeCode: z.string().trim().max(64).optional(),
+  location: z.string().trim().max(200).optional(),
+  workProfileId: z.string().optional(),
 };
 
 const createSchema = z.object({
@@ -62,6 +65,25 @@ function RoleSelect({ id, value, onChange, invalid }: { id: string; value: RoleK
         {options.map((k) => (
           <SelectItem key={k} value={k}>
             {roleMeta[k].label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function WorkProfileSelect({ id, value, onChange }: { id: string; value: string | undefined; onChange: (v: string | undefined) => void }) {
+  const profiles = useWorkProfiles();
+  return (
+    <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? undefined : v)}>
+      <SelectTrigger id={id}>
+        <SelectValue placeholder={profiles.isLoading ? "Loading…" : "No work profile"} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NONE}>No work profile</SelectItem>
+        {(profiles.data ?? []).map((p) => (
+          <SelectItem key={p.id} value={p.id}>
+            {p.name}
           </SelectItem>
         ))}
       </SelectContent>
@@ -110,7 +132,18 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
   const [showPw, setShowPw] = React.useState(false);
   const form = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
-    defaultValues: { email: "", displayName: "", roleKey: "EMPLOYEE", departmentId: undefined, jobTitle: "", phone: "", password: "" },
+    defaultValues: {
+      email: "",
+      displayName: "",
+      roleKey: "EMPLOYEE",
+      departmentId: undefined,
+      jobTitle: "",
+      phone: "",
+      employeeCode: "",
+      location: "",
+      workProfileId: undefined,
+      password: "",
+    },
   });
   const { register, control, handleSubmit, watch, formState } = form;
   const errors = formState.errors;
@@ -130,6 +163,9 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
       departmentId: v.departmentId || undefined,
       jobTitle: v.jobTitle || undefined,
       phone: v.phone || undefined,
+      employeeCode: v.employeeCode || undefined,
+      location: v.location || undefined,
+      workProfileId: v.workProfileId || undefined,
       password: v.password || undefined,
     }),
   );
@@ -158,6 +194,15 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
         </Field>
         <Field label="Phone" htmlFor="cu-phone" error={errors.phone?.message}>
           <Input id="cu-phone" type="tel" {...register("phone")} aria-invalid={!!errors.phone} />
+        </Field>
+        <Field label="Employee ID" htmlFor="cu-empcode" error={errors.employeeCode?.message}>
+          <Input id="cu-empcode" {...register("employeeCode")} placeholder="EMP-1001" />
+        </Field>
+        <Field label="Location" htmlFor="cu-location" error={errors.location?.message}>
+          <Input id="cu-location" {...register("location")} placeholder="Delhi NCR" />
+        </Field>
+        <Field label="Work profile" htmlFor="cu-wp" hint="Applies the profile's device policy to this employee's devices automatically.">
+          <Controller control={control} name="workProfileId" render={({ field }) => <WorkProfileSelect id="cu-wp" value={field.value} onChange={field.onChange} />} />
         </Field>
       </div>
 
@@ -225,6 +270,9 @@ function EditUserForm({ user, onDone }: { user: User; onDone: () => void }) {
       departmentId: user.departmentId ?? undefined,
       jobTitle: user.jobTitle ?? "",
       phone: user.phone ?? "",
+      employeeCode: user.employeeCode ?? "",
+      location: user.location ?? "",
+      workProfileId: user.workProfileId ?? undefined,
       isActive: user.isActive,
     },
   });
@@ -245,6 +293,9 @@ function EditUserForm({ user, onDone }: { user: User; onDone: () => void }) {
     if (dirty.departmentId) body.departmentId = v.departmentId ?? null;
     if (dirty.jobTitle) body.jobTitle = v.jobTitle || null;
     if (dirty.phone) body.phone = v.phone || null;
+    if (dirty.employeeCode) body.employeeCode = v.employeeCode || null;
+    if (dirty.location) body.location = v.location || null;
+    if (dirty.workProfileId) body.workProfileId = v.workProfileId ?? null;
     if (dirty.isActive) body.isActive = v.isActive;
     if (Object.keys(body).length === 0) {
       onDone();
@@ -288,6 +339,15 @@ function EditUserForm({ user, onDone }: { user: User; onDone: () => void }) {
         </Field>
         <Field label="Phone" htmlFor="eu-phone" error={errors.phone?.message}>
           <Input id="eu-phone" type="tel" {...register("phone")} aria-invalid={!!errors.phone} />
+        </Field>
+        <Field label="Employee ID" htmlFor="eu-empcode" error={errors.employeeCode?.message}>
+          <Input id="eu-empcode" {...register("employeeCode")} placeholder="EMP-1001" />
+        </Field>
+        <Field label="Location" htmlFor="eu-location" error={errors.location?.message}>
+          <Input id="eu-location" {...register("location")} placeholder="Delhi NCR" />
+        </Field>
+        <Field label="Work profile" htmlFor="eu-wp" hint="Applies the profile's device policy to this employee's devices automatically.">
+          <Controller control={control} name="workProfileId" render={({ field }) => <WorkProfileSelect id="eu-wp" value={field.value} onChange={field.onChange} />} />
         </Field>
         <Controller
           control={control}

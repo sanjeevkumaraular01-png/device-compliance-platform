@@ -948,6 +948,12 @@ export interface User {
   department?: NamedRef | null;
   jobTitle: string | null;
   phone: string | null;
+  employeeCode?: string | null;
+  location?: string | null;
+  workProfileId?: string | null;
+  workProfile?: { id: string; key: WorkProfileKey; name: string } | null;
+  managerId?: string | null;
+  manager?: UserRef | null;
   isActive: boolean;
   mfaEnabled: boolean;
   failedLoginCount: number;
@@ -966,6 +972,37 @@ export interface CreateUserInput {
   password?: string;
   jobTitle?: string | null;
   phone?: string | null;
+  employeeCode?: string | null;
+  location?: string | null;
+  workProfileId?: string | null;
+  managerId?: string | null;
+}
+
+export type WorkProfileKey = "SALES" | "HR" | "FINANCE" | "DEVELOPER" | "MANAGEMENT" | "SUPPORT" | "CUSTOM";
+
+export interface WorkProfile {
+  id: string;
+  key: WorkProfileKey;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  policyId: string | null;
+  policy?: { id: string; name: string; version: number } | null;
+  requiredSoftware: string[];
+  prohibitedSoftware: string[];
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { users?: number };
+}
+
+export interface WorkProfileInput {
+  key?: WorkProfileKey;
+  name?: string;
+  description?: string | null;
+  policyId?: string | null;
+  requiredSoftware?: string[];
+  prohibitedSoftware?: string[];
 }
 
 export type UpdateUserInput = Partial<Omit<CreateUserInput, "password">> & { isActive?: boolean };
@@ -1013,6 +1050,65 @@ export interface IpRestriction {
 }
 
 export type SystemSettings = Record<string, unknown>;
+
+// ─────────────────────────────── Self-service enrollment (Deploy) ───────────────────────────────
+// docs/DEPLOY-SELF-ENROLL.md — the public /install page and the admin Deployment settings tab.
+
+/** Public config for the /install page (`GET /deploy/config`, anonymous). No secrets. */
+export interface DeployConfig {
+  enabled: boolean;
+  companyName: string;
+  allowedDomains: string[];
+  agentDownloadUrl: string;
+}
+
+/** `POST /deploy/session` response — the personalized, single-use deployment credential. */
+export interface DeploySession {
+  deployToken: string; // sem_enr_… one-time, ~20 min
+  expiresAt: string;
+  employee: { email: string; displayName: string };
+  downloadUrl: string; // MSI (static)
+  setupUrl: string; // /deploy/setup.cmd?token=… (personalized one-click)
+  serverUrl: string; // API_PUBLIC_URL / DOMAIN
+  instructions: string;
+}
+
+export const DEPLOY_STATES = ["PENDING_DOWNLOAD", "ENROLLED_PENDING_APPROVAL", "ACTIVE", "EXPIRED"] as const;
+export type DeployState = (typeof DEPLOY_STATES)[number];
+
+/** `GET /deploy/status?token=…` — lets the /install page show "installation complete". */
+export interface DeployStatus {
+  state: DeployState;
+  device?: {
+    name: string;
+    os: string | null;
+    lastSeenAt: string | null;
+    complianceState: ComplianceState;
+  };
+}
+
+/** Admin Deployment settings (`GET /deploy/settings`, `settings:write`). */
+export interface DeploySettings {
+  enabled: boolean;
+  companyName: string;
+  allowedDomains: string[];
+  imapHost: string | null;
+  imapPort: number;
+  imapSecure: boolean;
+  installUrl: string; // read-only link to /install
+  agentDownloadUrl: string; // read-only MSI link
+  configured: boolean; // true once the IMAP host is set
+}
+
+/** Body for `PUT /deploy/settings` — only the editable fields. */
+export interface DeploySettingsInput {
+  enabled: boolean;
+  companyName: string;
+  allowedDomains: string[];
+  imapHost: string;
+  imapPort: number;
+  imapSecure: boolean;
+}
 
 // ─────────────────────────────── Workforce ───────────────────────────────
 // docs/WORKFORCE.md — productivity, attendance, tasks, daily reports, AI work intelligence.

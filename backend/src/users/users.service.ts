@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthContextService } from '../auth/auth-context.service';
+import { PoliciesService } from '../policies/policies.service';
 import { hashPassword, passwordPolicyViolations } from '../auth/password.util';
 import { orderBy, paginated, skipTake } from '../common/dto/pagination.dto';
 import { userScope } from '../common/scope';
@@ -21,6 +22,10 @@ export const USER_PUBLIC_SELECT = {
   departmentId: true,
   jobTitle: true,
   phone: true,
+  employeeCode: true,
+  location: true,
+  workProfileId: true,
+  managerId: true,
   isActive: true,
   mfaEnabled: true,
   failedLoginCount: true,
@@ -32,6 +37,8 @@ export const USER_PUBLIC_SELECT = {
   updatedAt: true,
   role: { select: { id: true, key: true, name: true } },
   department: { select: { id: true, name: true } },
+  workProfile: { select: { id: true, key: true, name: true } },
+  manager: { select: { id: true, displayName: true, email: true } },
   _count: { select: { assignedDevices: true } },
 } satisfies Prisma.UserSelect;
 
@@ -41,7 +48,14 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly authCtx: AuthContextService,
+    private readonly policies: PoliciesService,
   ) {}
+
+  /** Re-apply the effective device policy to a user's assigned devices. */
+  private async reapplyPolicyForUser(userId: string, actor: AuthUser) {
+    const devices = await this.prisma.device.findMany({ where: { assignedUserId: userId }, select: { id: true } });
+    await this.policies.applyToDevices(devices.map((d) => d.id), actor);
+  }
 
   private serialize(u: Prisma.UserGetPayload<{ select: typeof USER_PUBLIC_SELECT }>) {
     const { _count, ...rest } = u;
@@ -109,6 +123,10 @@ export class UsersService {
         departmentId: dto.departmentId ?? null,
         jobTitle: dto.jobTitle,
         phone: dto.phone,
+        employeeCode: dto.employeeCode ?? null,
+        location: dto.location ?? null,
+        workProfileId: dto.workProfileId ?? null,
+        managerId: dto.managerId ?? null,
         passwordHash: dto.password ? await hashPassword(dto.password) : null,
         passwordChangedAt: dto.password ? new Date() : null,
       },
@@ -138,6 +156,11 @@ export class UsersService {
     if (dto.departmentId !== undefined) data.departmentId = dto.departmentId;
     if (dto.jobTitle !== undefined) data.jobTitle = dto.jobTitle;
     if (dto.phone !== undefined) data.phone = dto.phone;
+    if (dto.employeeCode !== undefined) data.employeeCode = dto.employeeCode;
+    if (dto.location !== undefined) data.location = dto.location;
+    if (dto.managerId !== undefined) data.managerId = dto.managerId;
+    const workProfileChanged = dto.workProfileId !== undefined && dto.workProfileId !== existing.workProfileId;
+    if (dto.workProfileId !== undefined) data.workProfileId = dto.workProfileId;
     if (dto.isActive !== undefined) {
       if (id === actor.id && !dto.isActive) throw new ForbiddenException('You cannot deactivate yourself');
       data.isActive = dto.isActive;
@@ -150,6 +173,7 @@ export class UsersService {
     const u = await this.prisma.user.update({ where: { id }, data, select: USER_PUBLIC_SELECT });
     if (dto.isActive === false || dto.password) await this.revokeAllSessions(id);
     await this.authCtx.invalidateUser(id);
+    if (workProfileChanged) await this.reapplyPolicyForUser(id, actor);
     const out = this.serialize(u);
     await this.audit.log({
       category: 'USER_ACTION',

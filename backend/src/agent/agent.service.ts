@@ -126,7 +126,13 @@ export class AgentService {
         : token.autoApprove
           ? 'ACTIVE'
           : 'PENDING';
-    const matchedUser = !existing?.assignedUserId ? await this.matchUser(h.loggedInUser) : null;
+    // Self-service deployment: the token is bound to a specific employee (verified in the
+    // browser), which takes precedence over matching the OS logged-in username.
+    const boundUser =
+      token.assignToUserId && !existing?.assignedUserId
+        ? await this.prisma.user.findUnique({ where: { id: token.assignToUserId }, select: { id: true, departmentId: true } })
+        : null;
+    const matchedUser = boundUser ?? (!existing?.assignedUserId ? await this.matchUser(h.loggedInUser) : null);
 
     const common = {
       ...this.hardwareData(h),
@@ -167,7 +173,11 @@ export class AgentService {
     }
     if (matchedUser) {
       await this.prisma.deviceAssignment.create({
-        data: { deviceId: device.id, userId: matchedUser.id, notes: `Auto-assigned from logged-in user ${h.loggedInUser}` },
+        data: {
+          deviceId: device.id,
+          userId: matchedUser.id,
+          notes: boundUser ? 'Self-service enrollment (verified company email)' : `Auto-assigned from logged-in user ${h.loggedInUser}`,
+        },
       });
     }
 

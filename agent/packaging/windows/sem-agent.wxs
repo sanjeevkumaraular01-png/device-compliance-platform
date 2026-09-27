@@ -1,72 +1,156 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  WiX v3 template for a SecureEndpoint agent MSI (not built by the Makefile).
+  WiX v4/v5 source for SecureEndpoint-Agent-x64.msi.
 
-    candle -arch x64 -dVersion=1.0.0 -dBinary=bin\sem-agent-windows-amd64.exe packaging\windows\sem-agent.wxs
-    light -ext WixUtilExtension -out dist\sem-agent-1.0.0-x64.msi sem-agent.wixobj
+  This MSI is STATIC (identical for every employee). Personalisation happens at
+  install time through public MSI properties:
 
-  Silent deployment (Intune / GPO / SCCM):
-    msiexec /i sem-agent-1.0.0-x64.msi /qn SEM_SERVER=https://sem.example.com SEM_TOKEN=sem_enr_xxx
+    SERVER        (required)  server base URL, e.g. https://sem.example.com
+    DEPLOY_TOKEN  (required)  single-use enrollment token (sem_enr_...)
+    CA            (optional)  path to a PEM CA bundle for the server certificate
+    INSECURE      (optional)  set to 1 to skip TLS verification (lab only)
 
-  The MSI installs the binary, registers the SecureEndpointAgent service
-  (LocalSystem, automatic, restart on failure), enrolls using the public
-  properties SEM_SERVER / SEM_TOKEN and starts the service.
+  On a fresh install it runs (as SYSTEM, non-interactive):
+    sem-agent enroll (server, token, and optionally ca-file / insecure-skip-verify)
+    sem-agent install     (register the SecureEndpointAgent service + helper autostart)
+    sem-agent start       (start the service)
+  On uninstall / major-upgrade removal:
+    sem-agent uninstall   (before the files are deleted; failure is ignored)
+
+  Build (cross-platform, WiX v5 as a .NET tool - no Windows needed to COMPILE):
+    wix extension add -g WixToolset.Util.wixext
+    wix build packaging/windows/sem-agent.wxs -arch x64 \
+        -ext WixToolset.Util.wixext \
+        -o dist/downloads/SecureEndpoint-Agent-x64.msi
+  (the File Source below points at bin/sem-agent-windows-amd64.exe, so build that
+   binary first via scripts/build-dist.sh or a plain go build.)
+
+  Deploy (Intune / GPO / SCCM / one-click Setup.cmd):
+    msiexec /i SecureEndpoint-Agent-x64.msi /qn SERVER=https://sem.example.com DEPLOY_TOKEN=sem_enr_xxx
+    msiexec /x SecureEndpoint-Agent-x64.msi /qn
 -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
-     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
   <?ifndef Version?><?define Version = "1.0.0"?><?endif?>
   <?ifndef Binary?><?define Binary = "bin\sem-agent-windows-amd64.exe"?><?endif?>
 
-  <Product Id="*" Name="SecureEndpoint Agent" Language="1033" Version="$(var.Version)"
-           Manufacturer="SecureEndpoint" UpgradeCode="3E5B6C1A-4F2D-4B7E-9A31-6D8C2F0B5A11">
-    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64"
-             Description="SecureEndpoint Manager endpoint agent" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of the SecureEndpoint Agent is already installed." />
+  <Package Name="SecureEndpoint Agent"
+           Manufacturer="SecureEndpoint"
+           Version="$(var.Version)"
+           UpgradeCode="3E5B6C1A-4F2D-4B7E-9A31-6D8C2F0B5A11"
+           Scope="perMachine"
+           Compressed="yes"
+           Language="1033">
+
+    <SummaryInformation Description="SecureEndpoint Manager endpoint agent"
+                        Manufacturer="SecureEndpoint" />
+
+    <!-- Same UpgradeCode + higher Version = major upgrade; block downgrades. -->
+    <MajorUpgrade Schedule="afterInstallInitialize"
+                  AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
     <MediaTemplate EmbedCab="yes" />
 
-    <Property Id="SEM_SERVER" Secure="yes" />
-    <Property Id="SEM_TOKEN" Secure="yes" Hidden="yes" />
-    <Property Id="SEM_EXTRA_ARGS" Secure="yes" />
+    <!-- Public deployment properties. Secure="yes" lets them cross to the
+         SYSTEM-side (deferred) execution; DEPLOY_TOKEN is hidden from logs. -->
+    <Property Id="SERVER" Secure="yes" />
+    <Property Id="DEPLOY_TOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="CA" Secure="yes" />
+    <Property Id="INSECURE" Secure="yes" />
 
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLFOLDER" Name="SecureEndpoint">
-          <Component Id="AgentExe" Guid="8A0C7F21-2B7B-4E3F-8D2E-1C9B4A6E7F01" Win64="yes">
-            <File Id="SemAgentExe" Name="sem-agent.exe" Source="$(var.Binary)" KeyPath="yes" />
-            <ServiceInstall Id="SemAgentService" Name="SecureEndpointAgent" DisplayName="SecureEndpoint Agent"
-                            Description="SecureEndpoint Manager endpoint compliance agent"
-                            Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal"
-                            Arguments="run" Vital="yes">
-              <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
-                                  ThirdFailureActionType="restart" RestartServiceDelayInSeconds="10"
-                                  ResetPeriodInDays="1" />
-            </ServiceInstall>
-            <ServiceControl Id="SemAgentServiceControl" Name="SecureEndpointAgent"
-                            Start="install" Stop="both" Remove="uninstall" Wait="yes" />
-          </Component>
-        </Directory>
+    <!-- Add/Remove Programs metadata. -->
+    <Icon Id="sem-agent.ico" SourceFile="packaging\windows\sem-agent.ico" />
+    <Property Id="ARPPRODUCTICON" Value="sem-agent.ico" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="SecureEndpoint">
+        <Component Id="AgentExe" Bitness="always64"
+                   Guid="8A0C7F21-2B7B-4E3F-8D2E-1C9B4A6E7F01">
+          <File Id="SemAgentExe" Name="sem-agent.exe"
+                Source="$(var.Binary)" KeyPath="yes" />
+        </Component>
       </Directory>
-    </Directory>
-
-    <!-- Enroll before the service starts (only when SEM_TOKEN is provided). -->
-    <CustomAction Id="SetEnrollCmd" Property="EnrollAgent"
-                  Value="&quot;[INSTALLFOLDER]sem-agent.exe&quot; enroll --server &quot;[SEM_SERVER]&quot; --token &quot;[SEM_TOKEN]&quot; --force [SEM_EXTRA_ARGS]" />
-    <CustomAction Id="EnrollAgent" BinaryKey="WixCA" DllEntry="WixQuietExec64"
-                  Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
-    <!-- Undo USB enforcement on uninstall. -->
-    <CustomAction Id="SetResetUsbCmd" Property="ResetUsb" Value="&quot;[INSTALLFOLDER]sem-agent.exe&quot; reset-usb" />
-    <CustomAction Id="ResetUsb" BinaryKey="WixCA" DllEntry="WixQuietExec64"
-                  Execute="deferred" Impersonate="no" Return="ignore" />
-
-    <InstallExecuteSequence>
-      <Custom Action="SetEnrollCmd" Before="EnrollAgent">SEM_TOKEN AND NOT REMOVE</Custom>
-      <Custom Action="EnrollAgent" Before="StartServices">SEM_TOKEN AND NOT REMOVE</Custom>
-      <Custom Action="SetResetUsbCmd" Before="ResetUsb">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
-      <Custom Action="ResetUsb" After="StopServices">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
-    </InstallExecuteSequence>
+    </StandardDirectory>
 
     <Feature Id="Main" Title="SecureEndpoint Agent" Level="1">
       <ComponentRef Id="AgentExe" />
     </Feature>
-  </Product>
+
+    <!-- ================= Validation ================= -->
+    <!-- Type-19 fatal error: SERVER and DEPLOY_TOKEN are mandatory on a fresh
+         install. Never fires on repair/uninstall (Installed) or major upgrade
+         (WIX_UPGRADE_DETECTED), so those paths are not blocked. -->
+    <CustomAction Id="RequireDeployProps"
+                  Error="Run SecureEndpoint-Setup from the /install page; SERVER and DEPLOY_TOKEN are required." />
+
+    <!-- ============ Command-line assembly (immediate, type 51) ============ -->
+    <!-- Optional argument fragments, only set when their property is present. -->
+    <CustomAction Id="SetInsecureArg" Property="SEM_INSECURE_ARG"
+                  Value=" --insecure-skip-verify" />
+    <CustomAction Id="SetCaArg" Property="SEM_CA_ARG"
+                  Value=" --ca-file &quot;[CA]&quot;" />
+
+    <!-- CustomActionData carriers: the immediate CA Id differs from the
+         deferred CA Id, but Property= matches the deferred CA Id so MSI passes
+         the value as that CA's CustomActionData. -->
+    <CustomAction Id="SetEnrollCmd" Property="EnrollAgent"
+                  Value="&quot;[INSTALLFOLDER]sem-agent.exe&quot; enroll --server &quot;[SERVER]&quot; --token &quot;[DEPLOY_TOKEN]&quot;[SEM_CA_ARG][SEM_INSECURE_ARG]" />
+    <CustomAction Id="SetInstallCmd" Property="InstallService"
+                  Value="&quot;[INSTALLFOLDER]sem-agent.exe&quot; install" />
+    <CustomAction Id="SetStartCmd" Property="StartService"
+                  Value="&quot;[INSTALLFOLDER]sem-agent.exe&quot; start" />
+    <CustomAction Id="SetUninstallCmd" Property="UninstallService"
+                  Value="&quot;[INSTALLFOLDER]sem-agent.exe&quot; uninstall" />
+
+    <!-- ============ Deferred, elevated (SYSTEM) executions ============ -->
+    <!-- Enroll must succeed for a fresh install (Return=check). -->
+    <CustomAction Id="EnrollAgent" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
+    <!-- Register the Windows service + per-user helper autostart. -->
+    <CustomAction Id="InstallService" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="check" />
+    <!-- kardianos `install` only registers; start it explicitly. Non-fatal. -->
+    <CustomAction Id="StartService" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <!-- Best-effort teardown before files are removed; never blocks uninstall. -->
+    <CustomAction Id="UninstallService" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+
+    <InstallExecuteSequence>
+      <!-- Validate required properties (fresh installs only). -->
+      <Custom Action="RequireDeployProps" After="FindRelatedProducts"
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED AND (NOT SERVER OR NOT DEPLOY_TOKEN)" />
+
+      <!-- Build the enroll command line (after CostFinalize so [INSTALLFOLDER] resolves). -->
+      <Custom Action="SetInsecureArg" After="CostFinalize"
+              Condition="INSECURE=&quot;1&quot;" />
+      <Custom Action="SetCaArg" After="SetInsecureArg"
+              Condition="CA" />
+      <Custom Action="SetEnrollCmd" After="SetCaArg"
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="EnrollAgent" After="InstallFiles"
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+
+      <!-- Register + start the service (fresh install and the new side of an upgrade). -->
+      <Custom Action="SetInstallCmd" After="EnrollAgent"
+              Condition="NOT Installed" />
+      <Custom Action="InstallService" After="SetInstallCmd"
+              Condition="NOT Installed" />
+      <Custom Action="SetStartCmd" After="InstallService"
+              Condition="NOT Installed" />
+      <Custom Action="StartService" After="SetStartCmd"
+              Condition="NOT Installed" />
+
+      <!-- Tear down on uninstall and on the removal half of a major upgrade,
+           before the binary is deleted. -->
+      <Custom Action="SetUninstallCmd" Before="UninstallService"
+              Condition="REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="UninstallService" Before="RemoveFiles"
+              Condition="REMOVE~=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
 </Wix>

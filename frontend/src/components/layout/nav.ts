@@ -10,6 +10,7 @@ import {
   Sun,
   UsersRound,
   AlertTriangle,
+  Briefcase,
   Building2,
   ClipboardCheck,
   FileBarChart,
@@ -63,6 +64,13 @@ export const NAV: NavGroup[] = [
       },
       { title: "Enrollment", href: "/enrollment", icon: PlugZap, permissions: ["enrollment:manage"], keywords: ["tokens", "install", "agent"] },
       { title: "Policies", href: "/policies", icon: ShieldHalf, permissions: ["policies:read"], keywords: ["configuration", "baseline"] },
+      {
+        title: "Work Profiles",
+        href: "/work-profiles",
+        icon: Briefcase,
+        permissions: ["policies:read"],
+        keywords: ["role template", "sales", "finance", "hr", "developer", "management", "support", "employee automation"],
+      },
     ],
   },
   {

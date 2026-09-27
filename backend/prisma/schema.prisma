@@ -29,6 +29,7 @@ enum AuthProvider {
   ACTIVE_DIRECTORY
   AZURE_AD
   OIDC
+  IMAP
 }
 
 enum DeviceType {
@@ -58,6 +59,18 @@ enum ComplianceState {
   COMPLIANT
   NON_COMPLIANT
   UNKNOWN
+}
+
+// Employee work profile — drives the device policy and required software that are
+// applied automatically when an employee is bound to a device.
+enum WorkProfileKey {
+  SALES
+  HR
+  FINANCE
+  DEVELOPER
+  MANAGEMENT
+  SUPPORT
+  CUSTOM
 }
 
 enum RiskLevel {
@@ -306,6 +319,12 @@ model User {
   department        Department?  @relation("DepartmentMembers", fields: [departmentId], references: [id], onDelete: SetNull)
   jobTitle          String?      @map("job_title")
   phone             String?
+  employeeCode      String?      @unique @map("employee_code")
+  location          String?
+  workProfileId     String?      @map("work_profile_id") @db.Uuid
+  workProfile       WorkProfile? @relation("UserWorkProfile", fields: [workProfileId], references: [id], onDelete: SetNull)
+  managerId         String?      @map("manager_id") @db.Uuid
+  manager           User?        @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
   isActive          Boolean      @default(true) @map("is_active")
   mfaEnabled        Boolean      @default(false) @map("mfa_enabled")
   mfaSecretEnc      String?      @map("mfa_secret_enc") // AES-256-GCM encrypted TOTP secret
@@ -327,6 +346,7 @@ model User {
   usbRequests        UsbAccessRequest[] @relation("UsbRequester")
   usbDecisions       UsbAccessRequest[] @relation("UsbApprover")
   reports            Report[]
+  deployTokens       EnrollmentToken[]  @relation("DeployTokenUser")
 
   // Workforce
   workSessions     WorkSession[]
@@ -342,10 +362,13 @@ model User {
   reviewedReports  DailyWorkReport[] @relation("ReportReviewer")
   aiInsights       AiInsight[]
   workAlerts       Alert[]           @relation("AlertSubjectUser")
+  directReports    User[]            @relation("UserManager")
 
   @@unique([authProvider, externalId])
   @@index([roleId])
   @@index([departmentId])
+  @@index([workProfileId])
+  @@index([managerId])
   @@map("users")
 }
 
@@ -481,21 +504,25 @@ model DeviceAssignment {
 }
 
 model EnrollmentToken {
-  id           String      @id @default(uuid()) @db.Uuid
-  name         String
-  tokenHash    String      @unique @map("token_hash")
-  tokenPrefix  String      @map("token_prefix")
-  platform     OsPlatform?
-  departmentId String?     @map("department_id") @db.Uuid
-  policyId     String?     @map("policy_id") @db.Uuid
-  maxUses      Int         @default(100) @map("max_uses")
-  usedCount    Int         @default(0) @map("used_count")
-  autoApprove  Boolean     @default(true) @map("auto_approve")
-  expiresAt    DateTime    @map("expires_at")
-  revokedAt    DateTime?   @map("revoked_at")
-  createdById  String?     @map("created_by_id") @db.Uuid
-  createdAt    DateTime    @default(now()) @map("created_at")
+  id             String      @id @default(uuid()) @db.Uuid
+  name           String
+  tokenHash      String      @unique @map("token_hash")
+  tokenPrefix    String      @map("token_prefix")
+  platform       OsPlatform?
+  departmentId   String?     @map("department_id") @db.Uuid
+  policyId       String?     @map("policy_id") @db.Uuid
+  maxUses        Int         @default(100) @map("max_uses")
+  usedCount      Int         @default(0) @map("used_count")
+  autoApprove    Boolean     @default(true) @map("auto_approve")
+  expiresAt      DateTime    @map("expires_at")
+  revokedAt      DateTime?   @map("revoked_at")
+  createdById    String?     @map("created_by_id") @db.Uuid
+  // Self-service deployment: bind the enrolled device to this employee (single-use token).
+  assignToUserId String?     @map("assign_to_user_id") @db.Uuid
+  assignToUser   User?       @relation("DeployTokenUser", fields: [assignToUserId], references: [id], onDelete: SetNull)
+  createdAt      DateTime    @default(now()) @map("created_at")
 
+  @@index([assignToUserId])
   @@map("enrollment_tokens")
 }
 
@@ -558,10 +585,34 @@ model DevicePolicy {
   createdAt                 DateTime @default(now()) @map("created_at")
   updatedAt                 DateTime @updatedAt @map("updated_at")
 
-  devices     Device[]
-  departments Department[]
+  devices      Device[]
+  departments  Department[]
+  workProfiles WorkProfile[]
 
   @@map("device_policies")
+}
+
+// A work profile is a role-based template (Sales, HR, Finance, …). Binding an
+// employee to a device applies the profile's device policy automatically and
+// records the software the employee's role is expected to have.
+model WorkProfile {
+  id                 String         @id @default(uuid()) @db.Uuid
+  key                WorkProfileKey
+  name               String         @unique
+  description        String?
+  isSystem           Boolean        @default(false) @map("is_system")
+  policyId           String?        @map("policy_id") @db.Uuid
+  policy             DevicePolicy?  @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  requiredSoftware   String[]       @map("required_software")
+  prohibitedSoftware String[]       @map("prohibited_software")
+  createdById        String?        @map("created_by_id") @db.Uuid
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  users User[] @relation("UserWorkProfile")
+
+  @@index([policyId])
+  @@map("work_profiles")
 }
 
 model ComplianceRule {

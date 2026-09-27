@@ -229,6 +229,39 @@ async function seedBase() {
     });
   }
 
+  // System work profiles (role-based templates). Applied automatically to a device when an
+  // employee on the profile is bound to it. Admins can edit these or add CUSTOM profiles.
+  const WORK_PROFILES: {
+    key: 'SALES' | 'HR' | 'FINANCE' | 'DEVELOPER' | 'MANAGEMENT' | 'SUPPORT';
+    name: string;
+    description: string;
+    policyId: string | null;
+    requiredSoftware: string[];
+  }[] = [
+    { key: 'SALES', name: 'Sales', description: 'Field and inside sales staff', policyId: baseline.id, requiredSoftware: ['Google Chrome', 'Slack', 'Zoom'] },
+    { key: 'HR', name: 'HR', description: 'Human resources', policyId: baseline.id, requiredSoftware: ['Google Chrome', 'Microsoft 365'] },
+    { key: 'FINANCE', name: 'Finance', description: 'Finance and accounting (regulated)', policyId: finPolicy.id, requiredSoftware: ['Microsoft 365'] },
+    { key: 'DEVELOPER', name: 'Developer', description: 'Software engineers', policyId: engPolicy.id, requiredSoftware: ['Visual Studio Code', 'Git', 'Docker Desktop'] },
+    { key: 'MANAGEMENT', name: 'Management', description: 'Managers and leadership', policyId: baseline.id, requiredSoftware: ['Google Chrome', 'Slack'] },
+    { key: 'SUPPORT', name: 'Support', description: 'Customer support and helpdesk', policyId: baseline.id, requiredSoftware: ['Google Chrome', 'Slack', 'Zoom'] },
+  ];
+  for (const wp of WORK_PROFILES) {
+    await prisma.workProfile.upsert({
+      where: { name: wp.name },
+      create: {
+        key: wp.key,
+        name: wp.name,
+        description: wp.description,
+        isSystem: true,
+        policyId: wp.policyId,
+        requiredSoftware: wp.requiredSoftware,
+        prohibitedSoftware: [],
+        createdById: admin.id,
+      },
+      update: { key: wp.key, description: wp.description, isSystem: true },
+    });
+  }
+
   const crypto = process.env.ENCRYPTION_KEY ? new CryptoCore(process.env.ENCRYPTION_KEY) : null;
   for (const w of WHITELIST) {
     const data = {

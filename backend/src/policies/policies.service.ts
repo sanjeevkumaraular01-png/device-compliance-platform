@@ -12,7 +12,7 @@ import { deviceScope } from '../common/scope';
 import type { AuthUser } from '../common/types';
 import type { AgentWorkforcePolicy } from '../workforce/ingest.service';
 
-export type PolicySource = 'device' | 'department' | 'default';
+export type PolicySource = 'device' | 'workProfile' | 'department' | 'default';
 
 export interface AgentPolicy {
   policyId: string;
@@ -79,10 +79,23 @@ export class PoliciesService {
   }
 
   /** device.policyId → department.policyId → default policy. */
-  async resolveForDevice(device: { policyId: string | null; departmentId: string | null }): Promise<{ policy: DevicePolicy; source: PolicySource }> {
+  async resolveForDevice(device: {
+    policyId: string | null;
+    departmentId: string | null;
+    assignedUserId?: string | null;
+  }): Promise<{ policy: DevicePolicy; source: PolicySource }> {
     if (device.policyId) {
       const p = await this.prisma.devicePolicy.findUnique({ where: { id: device.policyId } });
       if (p) return { policy: p, source: 'device' };
+    }
+    // A device with no explicit policy inherits the policy of the assigned employee's
+    // work profile (e.g. a Finance employee's device picks up the Finance policy).
+    if (device.assignedUserId) {
+      const u = await this.prisma.user.findUnique({
+        where: { id: device.assignedUserId },
+        select: { workProfile: { select: { policy: true } } },
+      });
+      if (u?.workProfile?.policy) return { policy: u.workProfile.policy, source: 'workProfile' };
     }
     if (device.departmentId) {
       const dept = await this.prisma.department.findUnique({ where: { id: device.departmentId }, include: { policy: true } });
@@ -245,6 +258,23 @@ export class PoliciesService {
     await this.audit.log({ category: 'POLICY_CHANGE', action: 'policy.update', resourceType: 'DevicePolicy', resourceId: id, before, after: p });
     const affected = await this.propagate(p, actor);
     return { ...p, affectedDevices: affected };
+  }
+
+  /**
+   * Re-apply the *effective* policy to specific devices (e.g. after an employee's
+   * work profile changes). Queues APPLY_POLICY for enrolled devices and re-evaluates
+   * compliance for all of them.
+   */
+  async applyToDevices(deviceIds: string[], actor?: AuthUser): Promise<number> {
+    if (!deviceIds.length) return 0;
+    const devices = await this.prisma.device.findMany({
+      where: { id: { in: deviceIds } },
+      select: { id: true, status: true },
+    });
+    const enrolled = devices.filter((d) => d.status !== 'PENDING').map((d) => d.id);
+    await this.commands.createMany(enrolled, 'APPLY_POLICY', {}, { createdById: actor?.id, dedupePending: true });
+    await this.queueEvaluation(devices.map((d) => d.id));
+    return devices.length;
   }
 
   /** Queue APPLY_POLICY for affected devices and re-evaluate their compliance. */

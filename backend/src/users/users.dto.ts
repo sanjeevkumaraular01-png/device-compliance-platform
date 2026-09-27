@@ -23,6 +23,10 @@ export class CreateUserDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(256) password?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) jobTitle?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(50) phone?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(64) employeeCode?: string | null;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) location?: string | null;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() workProfileId?: string | null;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() managerId?: string | null;
 }
 
 export class UpdateUserDto extends PartialType(CreateUserDto) {

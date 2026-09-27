@@ -290,6 +290,8 @@ export class DevicesService {
       before: { assignedUserId: device.assignedUserId },
       after: { assignedUserId: userId, notes },
     });
+    // The newly assigned employee's work profile may map to a different policy — re-apply.
+    await this.policies.applyToDevices([id], actor);
     return assignment;
   }
 

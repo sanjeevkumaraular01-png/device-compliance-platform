@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Globe, MonitorSmartphone, Settings, ShieldAlert, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
+import { Globe, MonitorDown, MonitorSmartphone, Settings, ShieldAlert, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { TableSkeleton } from "@/components/common/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,9 +13,10 @@ import { MfaCard } from "@/components/settings/mfa-card";
 import { SessionsTab } from "@/components/settings/sessions-tab";
 import { IpRestrictionsTab } from "@/components/settings/ip-restrictions-tab";
 import { SystemTab } from "@/components/settings/system-tab";
+import { DeploymentTab } from "@/components/settings/deployment-tab";
 
 const BASE_TABS = ["profile", "security", "sessions"] as const;
-const ADMIN_TABS = ["ip", "system"] as const;
+const ADMIN_TABS = ["ip", "system", "deployment"] as const;
 type TabId = (typeof BASE_TABS)[number] | (typeof ADMIN_TABS)[number];
 
 export default function SettingsPage() {
@@ -92,6 +93,9 @@ function SettingsTabs() {
             <TabsTrigger value="system">
               <SlidersHorizontal /> System
             </TabsTrigger>
+            <TabsTrigger value="deployment">
+              <MonitorDown /> Deployment
+            </TabsTrigger>
           </>
         )}
       </TabsList>
@@ -130,6 +134,9 @@ function SettingsTabs() {
           </TabsContent>
           <TabsContent value="system">
             <SystemTab />
+          </TabsContent>
+          <TabsContent value="deployment">
+            <DeploymentTab />
           </TabsContent>
         </>
       )}

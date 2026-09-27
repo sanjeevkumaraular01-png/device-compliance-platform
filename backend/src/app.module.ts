@@ -25,10 +25,12 @@ import { RolesModule } from './roles/roles.module';
 import { DepartmentsModule } from './departments/departments.module';
 import { CommandsModule } from './devices/commands.service';
 import { PoliciesModule } from './policies/policies.module';
+import { WorkProfilesModule } from './work-profiles/work-profiles.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { DevicesModule } from './devices/devices.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
+import { DeployModule } from './deploy/deploy.module';
 import { SoftwareModule } from './software/software.module';
 import { UsbModule } from './usb/usb.module';
 import { SecurityModule } from './security/security.module';
@@ -108,10 +110,12 @@ import { AiModule } from './ai/ai.module';
     DepartmentsModule,
     CommandsModule,
     PoliciesModule,
+    WorkProfilesModule,
     AlertsModule,
     ComplianceModule,
     DevicesModule,
     EnrollmentModule,
+    DeployModule,
     SoftwareModule,
     UsbModule,
     SecurityModule,

@@ -98,6 +98,16 @@ x-backend-env: &backend-env
   AI_DAILY_RUN_TIME: ${AI_DAILY_RUN_TIME:-20:30}
   AI_MAX_EMPLOYEES_PER_RUN: ${AI_MAX_EMPLOYEES_PER_RUN:-500}
 
+  # Self-service device enrollment (docs/DEPLOY-SELF-ENROLL.md) — all optional; set IMAP host to enable
+  DEPLOY_ENABLED: ${DEPLOY_ENABLED:-true}
+  DEPLOY_COMPANY_NAME: ${DEPLOY_COMPANY_NAME:-Webyne}
+  DEPLOY_IMAP_HOST: ${DEPLOY_IMAP_HOST:-mail.webyne.com}
+  DEPLOY_IMAP_PORT: ${DEPLOY_IMAP_PORT:-993}
+  DEPLOY_IMAP_SECURE: ${DEPLOY_IMAP_SECURE:-true}
+  DEPLOY_ALLOWED_DOMAINS: ${DEPLOY_ALLOWED_DOMAINS:-webyne.com}
+  DEPLOY_SESSION_TTL_MIN: ${DEPLOY_SESSION_TTL_MIN:-20}
+  DEPLOY_DOWNLOAD_BASE_URL: ${DEPLOY_DOWNLOAD_BASE_URL:-}
+
 x-node-healthcheck: &node-healthcheck
   test:
     - CMD
