@@ -94,6 +94,7 @@ const (
 	CmdRestart           = "RESTART"
 	CmdEnableEncryption  = "ENABLE_ENCRYPTION"
 	CmdRefreshUsbRules   = "REFRESH_USB_RULES"
+	CmdShutdown          = "SHUTDOWN"
 )
 
 // Software event actions.

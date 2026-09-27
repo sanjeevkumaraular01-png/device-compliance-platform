@@ -32,6 +32,7 @@ var AllowedTypes = map[string]bool{
 	model.CmdRestart:           true,
 	model.CmdEnableEncryption:  true,
 	model.CmdRefreshUsbRules:   true,
+	model.CmdShutdown:          true,
 }
 
 // Dispatcher routes commands to handlers.
@@ -64,6 +65,10 @@ func NewDispatcher(log *slog.Logger, seenPath string) *Dispatcher {
 	d.Register(model.CmdRestart, func(ctx context.Context, c model.AgentCommand) model.CommandResult {
 		delay := PayloadInt(c.Payload, "delaySec", 60)
 		return FromOutput(restart(ctx, log, delay))
+	})
+	d.Register(model.CmdShutdown, func(ctx context.Context, c model.AgentCommand) model.CommandResult {
+		delay := PayloadInt(c.Payload, "delaySec", 60)
+		return FromOutput(shutdown(ctx, log, delay))
 	})
 	d.Register(model.CmdEnableEncryption, func(ctx context.Context, c model.AgentCommand) model.CommandResult {
 		out, data, err := enableEncryption(ctx, log)

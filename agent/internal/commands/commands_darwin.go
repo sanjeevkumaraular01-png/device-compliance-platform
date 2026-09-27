@@ -25,6 +25,12 @@ func restart(ctx context.Context, log *slog.Logger, delaySec int) (string, error
 	return platform.RunCombined(ctx, 30*time.Second, nil, "shutdown", "-r", "+"+strconv.Itoa(minutes))
 }
 
+func shutdown(ctx context.Context, log *slog.Logger, delaySec int) (string, error) {
+	minutes := (restartDelay(delaySec) + 59) / 60
+	log.Warn("scheduling shutdown", "minutes", minutes)
+	return platform.RunCombined(ctx, 30*time.Second, nil, "shutdown", "-h", "+"+strconv.Itoa(minutes))
+}
+
 func enableEncryption(ctx context.Context, log *slog.Logger) (string, map[string]any, error) {
 	out, _ := platform.RunCombined(ctx, 30*time.Second, nil, "fdesetup", "status")
 	if strings.Contains(out, "FileVault is On") {

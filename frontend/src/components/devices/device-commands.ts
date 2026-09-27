@@ -17,6 +17,7 @@ export const COMMAND_PRESETS: CommandPreset[] = [
   { type: "ENABLE_ENCRYPTION", label: "Enable encryption", description: "Turn on BitLocker / FileVault / LUKS" },
   { type: "LOCK_SCREEN", label: "Lock screen", description: "Lock the interactive session immediately" },
   { type: "RESTART", label: "Restart", description: "Reboot the device in 60 seconds", confirm: true },
+  { type: "SHUTDOWN", label: "Shut down", description: "Power off the device in 60 seconds", confirm: true },
 ];
 
 export const commandLabel = (type: CommandType): string =>
@@ -26,6 +27,7 @@ export const commandLabel = (type: CommandType): string =>
 export function commandPayload(type: CommandType, opts: { policyVersion?: number | null } = {}): Record<string, unknown> {
   switch (type) {
     case "RESTART":
+    case "SHUTDOWN":
       return { delaySec: 60 };
     case "INSTALL_PATCHES":
       return { severity: ["CRITICAL", "IMPORTANT"], reboot: "if-required" };

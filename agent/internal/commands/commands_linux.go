@@ -26,6 +26,12 @@ func restart(ctx context.Context, log *slog.Logger, delaySec int) (string, error
 	return platform.RunCombined(ctx, 30*time.Second, nil, "shutdown", "-r", "+"+strconv.Itoa(minutes), "SecureEndpoint: restart requested by IT")
 }
 
+func shutdown(ctx context.Context, log *slog.Logger, delaySec int) (string, error) {
+	minutes := (restartDelay(delaySec) + 59) / 60
+	log.Warn("scheduling shutdown", "minutes", minutes)
+	return platform.RunCombined(ctx, 30*time.Second, nil, "shutdown", "-h", "+"+strconv.Itoa(minutes), "SecureEndpoint: shutdown requested by IT")
+}
+
 func enableEncryption(ctx context.Context, log *slog.Logger) (string, map[string]any, error) {
 	return "", map[string]any{"supported": false},
 		errors.New("not supported on Linux: LUKS full-disk encryption must be configured at OS installation time (or re-provision the device with an encrypted root)")

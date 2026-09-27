@@ -163,6 +163,13 @@ func restart(ctx context.Context, log *slog.Logger, delaySec int) (string, error
 		"/c", "SecureEndpoint: restart requested by IT", "/d", "p:4:1")
 }
 
+func shutdown(ctx context.Context, log *slog.Logger, delaySec int) (string, error) {
+	d := restartDelay(delaySec)
+	log.Warn("scheduling shutdown", "delaySec", d)
+	return platform.RunCombined(ctx, 30*time.Second, nil, "shutdown.exe", "/s", "/t", strconv.Itoa(d),
+		"/c", "SecureEndpoint: shutdown requested by IT", "/d", "p:4:1")
+}
+
 var (
 	recoveryPwRE = regexp.MustCompile(`\b\d{6}(?:-\d{6}){7}\b`)
 	protectorRE  = regexp.MustCompile(`\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}`)

@@ -12,6 +12,7 @@ import {
   Lock,
   Pencil,
   Power,
+  PowerOff,
   RefreshCw,
   ScrollText,
   ShieldAlert,
@@ -43,6 +44,7 @@ const RUN_MENU: { type: CommandType; icon: React.ComponentType<{ className?: str
   { type: "COLLECT_INVENTORY", icon: RefreshCw },
   { type: "LOCK_SCREEN", icon: Lock },
   { type: "RESTART", icon: Power },
+  { type: "SHUTDOWN", icon: PowerOff },
   { type: "INSTALL_PATCHES", icon: Download },
   { type: "APPLY_POLICY", icon: ScrollText },
   { type: "ENABLE_ENCRYPTION", icon: HardDrive },
@@ -99,11 +101,12 @@ export function DeviceActions({ device, onCommandQueued }: { device: DeviceDetai
   });
 
   const runCommand = async (type: CommandType) => {
-    if (type === "RESTART") {
+    if (type === "RESTART" || type === "SHUTDOWN") {
+      const shutdown = type === "SHUTDOWN";
       const ok = await confirm({
-        title: `Restart ${device.deviceName}?`,
-        description: "The device reboots 60 seconds after the agent receives the command. The signed-in user may lose unsaved work.",
-        confirmLabel: "Restart device",
+        title: `${shutdown ? "Shut down" : "Restart"} ${device.deviceName}?`,
+        description: `The device ${shutdown ? "powers off" : "reboots"} 60 seconds after the agent receives the command. The signed-in user may lose unsaved work.`,
+        confirmLabel: shutdown ? "Shut down device" : "Restart device",
         destructive: true,
       });
       if (!ok) return;
@@ -147,7 +150,7 @@ export function DeviceActions({ device, onCommandQueued }: { device: DeviceDetai
             <DropdownMenuLabel>Remote actions</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {RUN_MENU.map(({ type, icon: Icon }) => (
-              <DropdownMenuItem key={type} destructive={type === "RESTART"} onSelect={defer(() => void runCommand(type))}>
+              <DropdownMenuItem key={type} destructive={type === "RESTART" || type === "SHUTDOWN"} onSelect={defer(() => void runCommand(type))}>
                 <Icon /> {commandLabel(type)}
               </DropdownMenuItem>
             ))}
