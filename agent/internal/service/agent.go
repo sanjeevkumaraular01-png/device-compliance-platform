@@ -211,6 +211,23 @@ func (a *Agent) TriggerReport() {
 	}
 }
 
+// SyncOnce performs an on-demand sync for the `sem-agent sync` CLI verb: it
+// uploads a full inventory report and refreshes the cached policy, without the
+// enforcement side effects of the background loop.
+func (a *Agent) SyncOnce(ctx context.Context) (*model.ReportResponse, error) {
+	resp := a.report(ctx)
+	if pol, err := a.client.Policy(ctx); err == nil {
+		a.mu.Lock()
+		a.cfg.Policy = pol
+		_ = a.cfg.Save("")
+		a.mu.Unlock()
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("report upload failed (queued to the offline spool if the server was unreachable)")
+	}
+	return resp, nil
+}
+
 func (a *Agent) heartbeat(ctx context.Context) {
 	req := model.HeartbeatRequest{AgentVersion: a.Version, UptimeSec: a.uptime(), LoggedInUser: collector.LoggedInUser(ctx)}
 	resp, err := a.client.Heartbeat(ctx, req)

@@ -39,6 +39,8 @@ Usage:
   sem-agent start | stop | restart
   sem-agent status               service state, enrollment and connectivity summary
   sem-agent collect --json       print a full report without sending it [--skip-patches] [--skip-software] [--section hardware|security|software|patches]
+  sem-agent inventory            alias for 'collect'
+  sem-agent sync                 upload inventory and refresh policy from the server now
   sem-agent usb                  list connected USB devices and the policy decision for each
   sem-agent reset-usb            remove all USB restrictions applied by the agent (used by uninstallers)
   sem-agent user-helper          per-user activity helper (started at logon; see docs/WORKFORCE.md)
@@ -78,8 +80,10 @@ func main() {
 		err = activity.ServeNativeHost(os.Stdin, os.Stdout)
 	case "status":
 		err = cmdStatus()
-	case "collect":
+	case "collect", "inventory":
 		err = cmdCollect(args)
+	case "sync":
+		err = cmdSync()
 	case "usb":
 		err = cmdUSB()
 	case "reset-usb":
@@ -444,6 +448,26 @@ func cmdUSB() error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(rows)
+}
+
+func cmdSync() error {
+	if err := requireAdmin("sync"); err != nil {
+		return err
+	}
+	log, closer := logging.Setup(logging.Options{File: true, ToStderr: true})
+	defer closer.Close()
+	a, err := service.NewAgent(version, log)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	resp, err := a.SyncOnce(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Synced with server. Compliance: %s (score %v, risk %s)\n", resp.ComplianceState, resp.ComplianceScore, resp.RiskLevel)
+	return nil
 }
 
 func cmdRenewCert() error {
