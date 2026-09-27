@@ -123,6 +123,34 @@ type HardwareInfo struct {
 	MacAddresses []string `json:"macAddresses,omitempty"`
 	LoggedInUser string   `json:"loggedInUser,omitempty"`
 	Domain       string   `json:"domain,omitempty"`
+	// Extended inventory (Windows-primary; best-effort on other platforms).
+	OsEdition       string           `json:"osEdition,omitempty"`
+	OsArch          string           `json:"osArch,omitempty"`
+	BiosVersion     string           `json:"biosVersion,omitempty"`
+	Gpu             string           `json:"gpu,omitempty"`
+	BatteryPercent  *int             `json:"batteryPercent,omitempty"`
+	BatteryStatus   string           `json:"batteryStatus,omitempty"`
+	Gateway         string           `json:"gateway,omitempty"`
+	DnsServers      []string         `json:"dnsServers,omitempty"`
+	NetworkAdapters []NetworkAdapter `json:"networkAdapters,omitempty"`
+}
+
+// NetworkAdapter describes one active network interface.
+type NetworkAdapter struct {
+	Name        string   `json:"name"`
+	MacAddress  string   `json:"macAddress,omitempty"`
+	IPAddresses []string `json:"ipAddresses,omitempty"`
+	Gateway     string   `json:"gateway,omitempty"`
+	DnsSuffix   string   `json:"dnsSuffix,omitempty"`
+	LinkSpeed   string   `json:"linkSpeed,omitempty"`
+}
+
+// Service is a running OS service/daemon.
+type Service struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName,omitempty"`
+	Status      string `json:"status"`
+	StartType   string `json:"startType,omitempty"`
 }
 
 // SecurityStatus is the "security" block of a report.
@@ -199,6 +227,7 @@ type Report struct {
 	Security    SecurityStatus `json:"security"`
 	Software    []Software     `json:"software"`
 	Patches     []Patch        `json:"patches"`
+	Services    []Service      `json:"services,omitempty"`
 }
 
 // ReportResponse is the reply to POST /agent/report.

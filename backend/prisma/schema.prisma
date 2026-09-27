@@ -439,8 +439,17 @@ model Device {
   osName            String?         @map("os_name")
   osVersion         String?         @map("os_version")
   osBuild           String?         @map("os_build")
+  osEdition         String?         @map("os_edition")
+  osArch            String?         @map("os_arch")
+  biosVersion       String?         @map("bios_version")
+  gpu               String?
+  batteryPercent    Int?            @map("battery_percent")
+  batteryStatus     String?         @map("battery_status")
   ipAddress         String?         @map("ip_address")
   macAddresses      String[]        @map("mac_addresses")
+  gateway           String?
+  dnsServers        String[]        @map("dns_servers")
+  networkAdapters   Json?           @map("network_adapters")
   assignedUserId    String?         @map("assigned_user_id") @db.Uuid
   assignedUser      User?           @relation("DeviceAssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
   departmentId      String?         @map("department_id") @db.Uuid
@@ -470,6 +479,7 @@ model Device {
   assignments       DeviceAssignment[]
   certificates      DeviceCertificate[]
   securityStatus    SecurityStatus?
+  services          DeviceService[]
   software          SoftwareInventory[]
   patches           PatchStatus[]
   usbEvents         UsbEvent[]
@@ -488,6 +498,23 @@ model Device {
   @@index([groupId])
   @@index([lastSeenAt])
   @@map("devices")
+}
+
+// Running OS services/daemons reported by the agent (one row per service per device).
+model DeviceService {
+  id          String   @id @default(uuid()) @db.Uuid
+  deviceId    String   @map("device_id") @db.Uuid
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  name        String
+  displayName String?  @map("display_name")
+  status      String // RUNNING / STOPPED
+  startType   String?  @map("start_type") // AUTOMATIC / MANUAL / DISABLED
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+
+  @@unique([deviceId, name])
+  @@index([deviceId])
+  @@map("device_services")
 }
 
 // Organizational grouping of devices (e.g. "Delhi Office Laptops", "Kiosks").

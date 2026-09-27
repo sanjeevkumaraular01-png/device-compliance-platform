@@ -396,3 +396,6 @@ func collectPatches(ctx context.Context, log *slog.Logger) ([]model.Patch, error
 	}
 	return ParseSoftwareUpdateList(out), nil
 }
+
+// collectServices is Windows-focused; not collected on macOS for now.
+func collectServices(ctx context.Context, log *slog.Logger) []model.Service { return nil }

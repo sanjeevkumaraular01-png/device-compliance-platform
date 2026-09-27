@@ -30,6 +30,15 @@ import {
 } from 'class-validator';
 import { LenientValidation } from '../common/validation.pipe';
 
+export class NetworkAdapterDto {
+  @ApiProperty() @IsString() @MaxLength(200) name: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(64) macAddress?: string;
+  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @ArrayMaxSize(16) @IsString({ each: true }) @MaxLength(64, { each: true }) ipAddresses?: string[];
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(64) gateway?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) dnsSuffix?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(32) linkSpeed?: string;
+}
+
 export class HardwareInfoDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(255) hostname: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(255) deviceName?: string;
@@ -48,6 +57,22 @@ export class HardwareInfoDto {
   @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @ArrayMaxSize(64) @IsString({ each: true }) @MaxLength(64, { each: true }) macAddresses?: string[];
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(255) loggedInUser?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(255) domain?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120) osEdition?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(32) osArch?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(128) biosVersion?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) gpu?: string;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(100) batteryPercent?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(32) batteryStatus?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(64) gateway?: string;
+  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @ArrayMaxSize(32) @IsString({ each: true }) @MaxLength(64, { each: true }) dnsServers?: string[];
+  @ApiPropertyOptional({ type: [NetworkAdapterDto] }) @IsOptional() @IsArray() @ArrayMaxSize(64) @ValidateNested({ each: true }) @Type(() => NetworkAdapterDto) networkAdapters?: NetworkAdapterDto[];
+}
+
+export class ServiceItemDto {
+  @ApiProperty() @IsString() @MinLength(1) @MaxLength(255) name: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(255) displayName?: string;
+  @ApiProperty() @IsString() @MaxLength(32) status: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(32) startType?: string;
 }
 
 @LenientValidation()
@@ -118,6 +143,7 @@ export class AgentReportDto {
   @ApiProperty({ type: SecurityReportDto }) @ValidateNested() @Type(() => SecurityReportDto) security: SecurityReportDto;
   @ApiProperty({ type: [SoftwareItemDto] }) @IsArray() @ArrayMaxSize(10000) @ValidateNested({ each: true }) @Type(() => SoftwareItemDto) software: SoftwareItemDto[];
   @ApiProperty({ type: [PatchItemDto] }) @IsArray() @ArrayMaxSize(10000) @ValidateNested({ each: true }) @Type(() => PatchItemDto) patches: PatchItemDto[];
+  @ApiPropertyOptional({ type: [ServiceItemDto] }) @IsOptional() @IsArray() @ArrayMaxSize(5000) @ValidateNested({ each: true }) @Type(() => ServiceItemDto) services?: ServiceItemDto[];
 }
 
 export class UsbEventItemDto {

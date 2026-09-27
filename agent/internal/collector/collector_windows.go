@@ -67,8 +67,22 @@ func WMIQuery[T any](ctx context.Context, timeout time.Duration, namespace, quer
 }
 
 type win32BIOS struct {
-	SerialNumber string
-	Manufacturer string
+	SerialNumber      string
+	Manufacturer      string
+	SMBIOSBIOSVersion string
+}
+
+type win32VideoController struct {
+	Name string
+}
+
+type win32NetworkAdapterConfiguration struct {
+	Description          string
+	MACAddress           string
+	IPAddress            []string
+	DefaultIPGateway     []string
+	DNSServerSearchOrder []string
+	DNSDomain            string
 }
 
 type win32ComputerSystem struct {
@@ -106,7 +120,9 @@ type win32SystemEnclosure struct {
 }
 
 type win32Battery struct {
-	Name string
+	Name                     string
+	EstimatedChargeRemaining uint16
+	BatteryStatus            uint16
 }
 
 func machineID(context.Context) string {
@@ -121,8 +137,9 @@ func collectHardware(ctx context.Context, log *slog.Logger) model.HardwareInfo {
 	if cn := os.Getenv("COMPUTERNAME"); cn != "" {
 		hw.DeviceName = cn
 	}
-	if b, err := WMIQuery[win32BIOS](ctx, probeTimeout, "", "SELECT SerialNumber, Manufacturer FROM Win32_BIOS"); err == nil && len(b) > 0 {
+	if b, err := WMIQuery[win32BIOS](ctx, probeTimeout, "", "SELECT SerialNumber, Manufacturer, SMBIOSBIOSVersion FROM Win32_BIOS"); err == nil && len(b) > 0 {
 		hw.SerialNumber = strings.TrimSpace(b[0].SerialNumber)
+		hw.BiosVersion = strings.TrimSpace(b[0].SMBIOSBIOSVersion)
 	} else if err != nil {
 		log.Debug("Win32_BIOS", "err", err.Error())
 	}
@@ -197,14 +214,109 @@ func collectHardware(ctx context.Context, log *slog.Logger) model.HardwareInfo {
 		log.Debug("Win32_SystemEnclosure", "err", err.Error())
 	}
 	hasBattery := false
-	if b, err := WMIQuery[win32Battery](ctx, 10*time.Second, "", "SELECT Name FROM Win32_Battery"); err == nil && len(b) > 0 {
+	if b, err := WMIQuery[win32Battery](ctx, 10*time.Second, "", "SELECT Name, EstimatedChargeRemaining, BatteryStatus FROM Win32_Battery"); err == nil && len(b) > 0 {
 		hasBattery = true
+		pct := int(b[0].EstimatedChargeRemaining)
+		if pct > 0 && pct <= 100 {
+			hw.BatteryPercent = &pct
+		}
+		hw.BatteryStatus = batteryStatusLabel(b[0].BatteryStatus)
 	}
+	// GPU (first video controller)
+	if v, err := WMIQuery[win32VideoController](ctx, probeTimeout, "", "SELECT Name FROM Win32_VideoController"); err == nil && len(v) > 0 {
+		var names []string
+		for _, x := range v {
+			if n := strings.TrimSpace(x.Name); n != "" {
+				names = append(names, n)
+			}
+		}
+		hw.Gpu = strings.Join(names, ", ")
+	}
+	// OS edition (e.g. Professional, Enterprise)
+	if ed, ok := RegString(registry.LOCAL_MACHINE, cv, "EditionID"); ok {
+		hw.OsEdition = strings.TrimSpace(ed)
+	}
+	// Network: gateway, DNS and per-adapter detail from IP-enabled adapters.
+	collectNetworkDetail(ctx, log, &hw)
 	hw.DeviceType = ClassifyDeviceType(chassis, hw.Manufacturer, hw.Model, serverOS, hasBattery || pcType == 2)
 	if hw.DeviceType == model.DeviceDesktop && pcType == 3 {
 		hw.DeviceType = model.DeviceWorkstation
 	}
 	return hw
+}
+
+func batteryStatusLabel(code uint16) string {
+	switch code {
+	case 1:
+		return "Discharging"
+	case 2:
+		return "On AC"
+	case 3:
+		return "Fully charged"
+	case 4:
+		return "Low"
+	case 5:
+		return "Critical"
+	case 6, 7, 8, 9:
+		return "Charging"
+	default:
+		return ""
+	}
+}
+
+// collectNetworkDetail fills gateway, DNS servers and the per-adapter list from
+// IP-enabled network adapter configurations.
+func collectNetworkDetail(ctx context.Context, log *slog.Logger, hw *model.HardwareInfo) {
+	cfgs, err := WMIQuery[win32NetworkAdapterConfiguration](ctx, probeTimeout, "",
+		"SELECT Description, MACAddress, IPAddress, DefaultIPGateway, DNSServerSearchOrder, DNSDomain FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = True")
+	if err != nil {
+		log.Debug("Win32_NetworkAdapterConfiguration", "err", err.Error())
+		return
+	}
+	dnsSeen := map[string]bool{}
+	for _, c := range cfgs {
+		ad := model.NetworkAdapter{
+			Name:        strings.TrimSpace(c.Description),
+			MacAddress:  strings.ToLower(strings.TrimSpace(c.MACAddress)),
+			IPAddresses: c.IPAddress,
+			DnsSuffix:   strings.TrimSpace(c.DNSDomain),
+		}
+		if len(c.DefaultIPGateway) > 0 {
+			ad.Gateway = c.DefaultIPGateway[0]
+			if hw.Gateway == "" {
+				hw.Gateway = c.DefaultIPGateway[0]
+			}
+		}
+		for _, d := range c.DNSServerSearchOrder {
+			if d = strings.TrimSpace(d); d != "" && !dnsSeen[d] {
+				dnsSeen[d] = true
+				hw.DnsServers = append(hw.DnsServers, d)
+			}
+		}
+		hw.NetworkAdapters = append(hw.NetworkAdapters, ad)
+	}
+}
+
+func collectServices(ctx context.Context, log *slog.Logger) []model.Service {
+	rows, err := WMIQuery[win32Service](ctx, 30*time.Second, "", "SELECT Name, DisplayName, State, StartMode FROM Win32_Service")
+	if err != nil {
+		log.Debug("Win32_Service (inventory)", "err", err.Error())
+		return nil
+	}
+	out := make([]model.Service, 0, len(rows))
+	for _, r := range rows {
+		name := strings.TrimSpace(r.Name)
+		if name == "" {
+			continue
+		}
+		out = append(out, model.Service{
+			Name:        name,
+			DisplayName: strings.TrimSpace(r.DisplayName),
+			Status:      strings.ToUpper(strings.TrimSpace(r.State)),
+			StartType:   strings.ToUpper(strings.TrimSpace(r.StartMode)),
+		})
+	}
+	return out
 }
 
 func loggedInUser(ctx context.Context) string {
@@ -243,8 +355,10 @@ type mpComputerStatus struct {
 }
 
 type win32Service struct {
-	Name  string
-	State string
+	Name        string
+	DisplayName string
+	State       string
+	StartMode   string
 }
 
 type netFirewallProfile struct {

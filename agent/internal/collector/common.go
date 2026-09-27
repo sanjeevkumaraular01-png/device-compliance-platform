@@ -3,6 +3,7 @@ package collector
 import (
 	"net"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -12,6 +13,22 @@ import (
 func hostname() string {
 	h, _ := os.Hostname()
 	return h
+}
+
+// archLabel returns a human-friendly CPU architecture label.
+func archLabel() string {
+	switch runtime.GOARCH {
+	case "amd64":
+		return "x64"
+	case "386":
+		return "x86"
+	case "arm64":
+		return "arm64"
+	case "arm":
+		return "arm"
+	default:
+		return runtime.GOARCH
+	}
 }
 
 // virtualIfacePrefixes are skipped when choosing MAC addresses.

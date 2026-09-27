@@ -14,7 +14,7 @@ import { AlertsService } from '../alerts/alerts.service';
 import { ComplianceService } from '../compliance/compliance.service';
 import { PoliciesService } from '../policies/policies.service';
 import { CommandsService } from './commands.service';
-import { orderBy, paginated, skipTake } from '../common/dto/pagination.dto';
+import { orderBy, paginated, skipTake, PaginationQueryDto } from '../common/dto/pagination.dto';
 import { deviceScope, isScoped } from '../common/scope';
 import type { AuthUser } from '../common/types';
 import {
@@ -330,6 +330,26 @@ export class DevicesService {
       },
       orderBy: { assignedAt: 'desc' },
     });
+  }
+
+  async services(id: string, q: PaginationQueryDto, user?: AuthUser) {
+    await this.findScoped(id, user);
+    const where: Prisma.DeviceServiceWhereInput = { deviceId: id };
+    if (q.search) {
+      where.OR = [
+        { name: { contains: q.search, mode: 'insensitive' } },
+        { displayName: { contains: q.search, mode: 'insensitive' } },
+      ];
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.deviceService.findMany({
+        where,
+        orderBy: orderBy(q, ['name', 'displayName', 'status', 'startType', 'lastSeenAt'], 'name'),
+        ...skipTake(q),
+      }),
+      this.prisma.deviceService.count({ where }),
+    ]);
+    return paginated(rows, q.page, q.pageSize, total);
   }
 
   async software(id: string, q: DeviceSoftwareQueryDto, user?: AuthUser) {

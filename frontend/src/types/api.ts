@@ -269,8 +269,17 @@ export interface Device {
   osName: string | null;
   osVersion: string | null;
   osBuild: string | null;
+  osEdition?: string | null;
+  osArch?: string | null;
+  biosVersion?: string | null;
+  gpu?: string | null;
+  batteryPercent?: number | null;
+  batteryStatus?: string | null;
   ipAddress: string | null;
   macAddresses: string[];
+  gateway?: string | null;
+  dnsServers?: string[];
+  networkAdapters?: NetworkAdapter[] | null;
   assignedUserId: string | null;
   assignedUser: UserRef | null;
   departmentId: string | null;
@@ -302,6 +311,26 @@ export interface DeviceGroupRef {
   id: string;
   name: string;
   color?: string | null;
+}
+
+export interface NetworkAdapter {
+  name: string;
+  macAddress?: string;
+  ipAddresses?: string[];
+  gateway?: string;
+  dnsSuffix?: string;
+  linkSpeed?: string;
+}
+
+export interface DeviceService {
+  id: string;
+  deviceId: string;
+  name: string;
+  displayName: string | null;
+  status: string;
+  startType: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
 }
 
 export interface DeviceGroup {

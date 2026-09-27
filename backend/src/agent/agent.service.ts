@@ -79,6 +79,15 @@ export class AgentService {
       ...(h.storageGb != null ? { storageGb: h.storageGb } : {}),
       ...(h.ipAddress ? { ipAddress: trimOrNull(h.ipAddress, 64) } : {}),
       ...(h.macAddresses ? { macAddresses: h.macAddresses.map((m) => m.toLowerCase()) } : {}),
+      ...(h.osEdition ? { osEdition: trimOrNull(h.osEdition, 120) } : {}),
+      ...(h.osArch ? { osArch: trimOrNull(h.osArch, 32) } : {}),
+      ...(h.biosVersion ? { biosVersion: trimOrNull(h.biosVersion, 128) } : {}),
+      ...(h.gpu ? { gpu: trimOrNull(h.gpu, 200) } : {}),
+      ...(h.batteryPercent != null ? { batteryPercent: h.batteryPercent } : {}),
+      ...(h.batteryStatus ? { batteryStatus: trimOrNull(h.batteryStatus, 32) } : {}),
+      ...(h.gateway ? { gateway: trimOrNull(h.gateway, 64) } : {}),
+      ...(h.dnsServers ? { dnsServers: h.dnsServers.map((d) => d.trim()).filter(Boolean).slice(0, 32) } : {}),
+      ...(h.networkAdapters ? { networkAdapters: toJsonSafe<Prisma.InputJsonValue>(h.networkAdapters) } : {}),
     };
   }
 
@@ -392,6 +401,9 @@ export class AgentService {
     // 4. patches
     await this.upsertPatches(device.id, dto, now);
 
+    // 4b. running services
+    await this.reconcileServices(device.id, dto, now);
+
     // 5. compliance
     const result = await this.compliance.evaluateDevice(device.id);
     return {
@@ -552,6 +564,32 @@ export class AgentService {
       const stillPresent = [...reported.values()].some((i) => i.name.toLowerCase() === r.name.toLowerCase());
       if (!stillPresent) await this.alerts.autoResolve(`software:${deviceId}:${r.name.toLowerCase()}`, 'software removed');
     }
+  }
+
+  private async reconcileServices(deviceId: string, dto: AgentReportDto, now: Date) {
+    if (!dto.services) return; // services not reported this cycle → leave existing rows untouched
+    const seen = new Set<string>();
+    const ops: Prisma.PrismaPromise<unknown>[] = [];
+    for (const svc of dto.services) {
+      const name = svc.name.substring(0, 255);
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      const data = {
+        displayName: trimOrNull(svc.displayName, 255),
+        status: svc.status.substring(0, 32),
+        startType: trimOrNull(svc.startType, 32),
+        lastSeenAt: now,
+      };
+      ops.push(
+        this.prisma.deviceService.upsert({
+          where: { deviceId_name: { deviceId, name } },
+          create: { deviceId, name, ...data, firstSeenAt: now },
+          update: data,
+        }),
+      );
+    }
+    for (let i = 0; i < ops.length; i += 200) await this.prisma.$transaction(ops.slice(i, i + 200));
+    if (seen.size) await this.prisma.deviceService.deleteMany({ where: { deviceId, name: { notIn: Array.from(seen) } } });
   }
 
   private async upsertPatches(deviceId: string, dto: AgentReportDto, now: Date) {

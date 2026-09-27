@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
+import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import type { AuthUser } from '../common/types';
 import {
   AssignDeviceDto,
@@ -85,6 +86,12 @@ export class DevicesController {
   @RequirePermissions('devices:read')
   patches(@Param('id', ParseUUIDPipe) id: string, @Query() q: DevicePatchQueryDto, @CurrentUser() user: AuthUser) {
     return this.devices.patches(id, q, user);
+  }
+
+  @Get(':id/services')
+  @RequirePermissions('devices:read')
+  services(@Param('id', ParseUUIDPipe) id: string, @Query() q: PaginationQueryDto, @CurrentUser() user: AuthUser) {
+    return this.devices.services(id, q, user);
   }
 
   @Get(':id/usb-events')

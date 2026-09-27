@@ -744,3 +744,6 @@ func collectPatches(ctx context.Context, log *slog.Logger) ([]model.Patch, error
 	log.Debug("no supported package manager for patch scan")
 	return []model.Patch{}, nil
 }
+
+// collectServices is Windows-focused; not collected on Linux for now.
+func collectServices(ctx context.Context, log *slog.Logger) []model.Service { return nil }

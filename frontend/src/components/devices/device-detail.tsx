@@ -23,6 +23,9 @@ import { cn } from "@/lib/utils";
 import type { DeviceDetail as DeviceDetailT, PatchState } from "@/types/api";
 import { DeviceActions } from "@/components/devices/device-actions";
 import { OverviewTab } from "@/components/devices/tabs/overview-tab";
+import { HardwareTab } from "@/components/devices/tabs/hardware-tab";
+import { NetworkTab } from "@/components/devices/tabs/network-tab";
+import { ServicesTab } from "@/components/devices/tabs/services-tab";
 import { SecurityTab } from "@/components/devices/tabs/security-tab";
 import { ComplianceTab } from "@/components/devices/tabs/compliance-tab";
 import { SoftwareTab } from "@/components/devices/tabs/software-tab";
@@ -31,15 +34,18 @@ import { UsbEventsTab } from "@/components/devices/tabs/usb-tab";
 import { CommandsTab } from "@/components/devices/tabs/commands-tab";
 import { TimelineTab } from "@/components/devices/tabs/timeline-tab";
 
-const TABS = ["overview", "security", "compliance", "software", "patches", "usb", "commands", "timeline"] as const;
+const TABS = ["overview", "hardware", "network", "security", "compliance", "software", "patches", "services", "usb", "commands", "timeline"] as const;
 type TabKey = (typeof TABS)[number];
 
 const TAB_LABELS: Record<TabKey, string> = {
   overview: "Overview",
+  hardware: "Hardware",
+  network: "Network",
   security: "Security",
   compliance: "Compliance",
   software: "Software",
   patches: "Patches",
+  services: "Services",
   usb: "USB Events",
   commands: "Commands",
   timeline: "Timeline",
@@ -214,6 +220,15 @@ export function DeviceDetail({ id }: { id: string }) {
         </TabsList>
         <TabsContent value="overview">
           <OverviewTab device={device} />
+        </TabsContent>
+        <TabsContent value="hardware">
+          <HardwareTab device={device} />
+        </TabsContent>
+        <TabsContent value="network">
+          <NetworkTab device={device} />
+        </TabsContent>
+        <TabsContent value="services">
+          <ServicesTab deviceId={device.id} />
         </TabsContent>
         <TabsContent value="security">
           <SecurityTab device={device} />

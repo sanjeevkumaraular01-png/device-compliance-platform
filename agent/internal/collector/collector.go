@@ -59,6 +59,9 @@ func (c *Collector) Hardware(ctx context.Context) model.HardwareInfo {
 		return collectHardware(ctx, c.log), nil
 	})
 	hw.Platform = Platform()
+	if hw.OsArch == "" {
+		hw.OsArch = archLabel()
+	}
 	fillNetwork(&hw)
 	if hw.Hostname == "" {
 		hw.Hostname = hostname()
@@ -151,8 +154,18 @@ func (c *Collector) Report(ctx context.Context) *model.Report {
 		wg.Add(1)
 		go func() { defer wg.Done(); r.Patches = c.Patches(ctx, false) }()
 	}
+	wg.Add(1)
+	go func() { defer wg.Done(); r.Services = c.Services(ctx) }()
 	wg.Wait()
 	return r
+}
+
+// Services collects the running OS services/daemons (best-effort).
+func (c *Collector) Services(ctx context.Context) []model.Service {
+	items, _ := probeValue(ctx, c.log, "services", 60*time.Second, func(ctx context.Context) ([]model.Service, error) {
+		return collectServices(ctx, c.log), nil
+	})
+	return items
 }
 
 // LoggedInUser returns the interactive user (best effort).
