@@ -34,6 +34,7 @@ export const DEVICE_INCLUDE = {
   assignedUser: { select: { id: true, displayName: true, email: true } },
   department: { select: { id: true, name: true } },
   policy: { select: { id: true, name: true } },
+  group: { select: { id: true, name: true, color: true } },
 } satisfies Prisma.DeviceInclude;
 
 type DeviceWithRefs = Prisma.DeviceGetPayload<{ include: typeof DEVICE_INCLUDE }>;
@@ -45,6 +46,7 @@ export function serializeDevice(d: DeviceWithRefs | (Device & Partial<DeviceWith
     assignedUser: rest.assignedUser ?? null,
     department: rest.department ?? null,
     policy: rest.policy ?? null,
+    group: rest.group ?? null,
     online: !!d.lastSeenAt && Date.now() - new Date(d.lastSeenAt).getTime() <= ONLINE_WINDOW_MS,
   };
 }
@@ -92,6 +94,7 @@ export class DevicesService {
     if (q.departmentId) and.push({ departmentId: q.departmentId });
     if (q.assignedUserId) and.push({ assignedUserId: q.assignedUserId });
     if (q.policyId) and.push({ policyId: q.policyId });
+    if (q.groupId) and.push({ groupId: q.groupId });
     if (q.deviceType) and.push({ deviceType: q.deviceType });
     if (q.warrantyStatus) and.push({ warrantyStatus: q.warrantyStatus });
     if (q.online !== undefined) {

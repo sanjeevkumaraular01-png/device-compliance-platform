@@ -276,6 +276,8 @@ export interface Device {
   department: NamedRef | null;
   policyId: string | null;
   policy: NamedRef | null;
+  groupId?: string | null;
+  group?: DeviceGroupRef | null;
   purchaseDate: string | null;
   warrantyExpiresAt: string | null;
   warrantyStatus: WarrantyStatus;
@@ -293,6 +295,29 @@ export interface Device {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DeviceGroupRef {
+  id: string;
+  name: string;
+  color?: string | null;
+}
+
+export interface DeviceGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { devices?: number };
+}
+
+export interface DeviceGroupInput {
+  name?: string;
+  description?: string | null;
+  color?: string | null;
 }
 
 export interface DeviceDetail extends Device {

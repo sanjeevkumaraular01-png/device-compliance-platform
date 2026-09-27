@@ -446,6 +446,8 @@ model Device {
   department        Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   policyId          String?         @map("policy_id") @db.Uuid
   policy            DevicePolicy?   @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  groupId           String?         @map("group_id") @db.Uuid
+  group             DeviceGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
   purchaseDate      DateTime?       @map("purchase_date") @db.Date
   warrantyExpiresAt DateTime?       @map("warranty_expires_at") @db.Date
   warrantyStatus    WarrantyStatus  @default(UNKNOWN) @map("warranty_status")
@@ -482,8 +484,25 @@ model Device {
   @@index([riskLevel])
   @@index([departmentId])
   @@index([assignedUserId])
+  @@index([groupId])
   @@index([lastSeenAt])
   @@map("devices")
+}
+
+// Organizational grouping of devices (e.g. "Delhi Office Laptops", "Kiosks").
+// Independent of department/policy; used for filtering and bulk operations.
+model DeviceGroup {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String?
+  color       String?
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  devices Device[]
+
+  @@map("device_groups")
 }
 
 model DeviceAssignment {

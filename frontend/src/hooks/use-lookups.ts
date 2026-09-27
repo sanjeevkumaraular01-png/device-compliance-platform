@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { normalizeList } from "@/hooks/use-list-query";
-import type { Department, DevicePolicy, Paginated, Role, User, Device, WorkProfile } from "@/types/api";
+import type { Department, DevicePolicy, Paginated, Role, User, Device, WorkProfile, DeviceGroup } from "@/types/api";
 
 /** Reference data used by selects and filters across pages (cached 5 min). */
 
@@ -36,6 +36,17 @@ export function useWorkProfiles(enabled = true) {
       normalizeList(await api.get<Paginated<WorkProfile> | WorkProfile[]>("/work-profiles", { pageSize: 200, sortBy: "name", sortOrder: "asc" })).data,
     staleTime: 5 * 60_000,
     enabled: enabled && can("policies:read"),
+  });
+}
+
+export function useDeviceGroups(enabled = true) {
+  const { can } = useAuth();
+  return useQuery({
+    queryKey: ["device-groups", "lookup"],
+    queryFn: async () =>
+      normalizeList(await api.get<Paginated<DeviceGroup> | DeviceGroup[]>("/device-groups", { pageSize: 200, sortBy: "name", sortOrder: "asc" })).data,
+    staleTime: 5 * 60_000,
+    enabled: enabled && can("devices:read"),
   });
 }
 

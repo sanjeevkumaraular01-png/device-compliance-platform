@@ -29,6 +29,7 @@ import { WorkProfilesModule } from './work-profiles/work-profiles.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { DevicesModule } from './devices/devices.module';
+import { DeviceGroupsModule } from './device-groups/device-groups.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { DeployModule } from './deploy/deploy.module';
 import { SoftwareModule } from './software/software.module';
@@ -114,6 +115,7 @@ import { AiModule } from './ai/ai.module';
     AlertsModule,
     ComplianceModule,
     DevicesModule,
+    DeviceGroupsModule,
     EnrollmentModule,
     DeployModule,
     SoftwareModule,

@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Field } from "@/components/common/misc";
 import { EmptyState } from "@/components/common/states";
 import { useApiMutation } from "@/hooks/use-api-mutation";
-import { useDepartments, usePolicies, useUserSearch } from "@/hooks/use-lookups";
+import { useDepartments, useDeviceGroups, usePolicies, useUserSearch } from "@/hooks/use-lookups";
 import { useDebounce } from "@/hooks/use-debounce";
 import { usePermission } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -263,6 +263,7 @@ const editSchema = z.object({
   manufacturer: optionalText,
   model: optionalText,
   departmentId: z.string(),
+  groupId: z.string(),
   purchaseDate: z.string().optional(),
   warrantyExpiresAt: z.string().optional(),
   isCompanyOwned: z.boolean(),
@@ -279,6 +280,7 @@ function editDefaults(d: Device): EditValues {
     manufacturer: d.manufacturer ?? "",
     model: d.model ?? "",
     departmentId: d.departmentId ?? NONE,
+    groupId: d.groupId ?? NONE,
     purchaseDate: toIsoDateInput(d.purchaseDate),
     warrantyExpiresAt: toIsoDateInput(d.warrantyExpiresAt),
     isCompanyOwned: d.isCompanyOwned,
@@ -289,6 +291,7 @@ function editDefaults(d: Device): EditValues {
 
 export function EditDeviceSheet({ device, open, onOpenChange }: { device: Device; open: boolean; onOpenChange: (o: boolean) => void }) {
   const departments = useDepartments(open);
+  const groups = useDeviceGroups(open);
   const form = useForm<EditValues>({ resolver: zodResolver(editSchema), defaultValues: editDefaults(device) });
 
   React.useEffect(() => {
@@ -309,6 +312,7 @@ export function EditDeviceSheet({ device, open, onOpenChange }: { device: Device
       manufacturer: v.manufacturer || null,
       model: v.model || null,
       departmentId: v.departmentId === NONE ? null : v.departmentId,
+      groupId: v.groupId === NONE ? null : v.groupId,
       purchaseDate: toNullableDate(v.purchaseDate),
       warrantyExpiresAt: toNullableDate(v.warrantyExpiresAt),
       isCompanyOwned: v.isCompanyOwned,
@@ -366,6 +370,27 @@ export function EditDeviceSheet({ device, open, onOpenChange }: { device: Device
             <div className="sm:col-span-2">
               <DepartmentField id="edit-departmentId" control={form.control} departments={departments.data} loading={departments.isLoading} />
             </div>
+            <Field label="Device group" htmlFor="edit-groupId" className="sm:col-span-2">
+              <Controller
+                control={form.control}
+                name="groupId"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange} disabled={groups.isLoading}>
+                    <SelectTrigger id="edit-groupId">
+                      <SelectValue placeholder={groups.isLoading ? "Loading…" : "No group"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>No group</SelectItem>
+                      {(groups.data ?? []).map((g) => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </Field>
             <Field label="Purchase date" htmlFor="edit-purchaseDate">
               <Input id="edit-purchaseDate" type="date" {...form.register("purchaseDate")} />
             </Field>

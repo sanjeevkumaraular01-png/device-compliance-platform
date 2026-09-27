@@ -39,6 +39,7 @@ export class DeviceQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() departmentId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() assignedUserId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() policyId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() groupId?: string;
   @ApiPropertyOptional({ enum: DeviceType }) @IsOptional() @IsEnum(DeviceType) deviceType?: DeviceType;
   @ApiPropertyOptional() @IsOptional() @ToBoolean() @IsBoolean() online?: boolean;
   @ApiPropertyOptional({ enum: WarrantyStatus }) @IsOptional() @IsEnum(WarrantyStatus) warrantyStatus?: WarrantyStatus;
@@ -62,6 +63,7 @@ export class CreateDeviceDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() departmentId?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsUUID() assignedUserId?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsUUID() policyId?: string | null;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() groupId?: string | null;
   @ApiPropertyOptional() @IsOptional() @Type(() => Date) @IsDate() purchaseDate?: Date | null;
   @ApiPropertyOptional() @IsOptional() @Type(() => Date) @IsDate() warrantyExpiresAt?: Date | null;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isCompanyOwned?: boolean;
