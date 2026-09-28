@@ -191,7 +191,10 @@ function SignInStep({
 
 function DownloadStep({ session, onReset }: { session: DeploySession; onReset: () => void }) {
   const expiry = useExpiryLabel(session.expiresAt);
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(session.serverUrl);
+  const isLocal =
+    /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?(\/|$)/i.test(
+      session.serverUrl,
+    );
   const manualCommand = `sem-agent.exe enroll --server ${session.serverUrl} --token ${session.deployToken}${isLocal ? " --insecure-skip-verify" : ""}`;
 
   const steps = [

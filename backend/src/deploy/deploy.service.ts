@@ -7,6 +7,11 @@ import { MailVerifier } from './mail-verifier';
 import { DeploySettingsDto } from './deploy.dto';
 
 const TOKEN_PREFIX = 'sem_enr_'; // reuse the enrollment-token format so /agent/enroll accepts it
+
+/** True for localhost or a private LAN address (self-signed cert / office-LAN dev). */
+function isPrivateOrLocalUrl(url: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?(\/|$)/i.test(url);
+}
 const SETTING = {
   enabled: 'deploy.enabled',
   companyName: 'deploy.companyName',
@@ -202,11 +207,12 @@ export class DeployService {
     }
     const server = this.config.apiPublicUrl;
     const base = this.downloadBase;
-    // A self-signed cert is used on localhost dev; trust it (and skip agent TLS verify)
-    // only for localhost/127.0.0.1 — a real domain must present a valid certificate.
-    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(server);
-    const trustLine = isLocal ? '[Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; ' : '';
-    const insecure = isLocal ? ' --insecure-skip-verify' : '';
+    // A self-signed cert is used on localhost / office-LAN dev; trust it (and skip agent
+    // TLS verify) only for localhost and private LAN IPs — a public domain must present a
+    // valid certificate.
+    const isLocalOrPrivate = isPrivateOrLocalUrl(server);
+    const trustLine = isLocalOrPrivate ? '[Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; ' : '';
+    const insecure = isLocalOrPrivate ? ' --insecure-skip-verify' : '';
     // Downloads the agent .exe and runs enroll + service install with the one-time token.
     return [
       '@echo off',
