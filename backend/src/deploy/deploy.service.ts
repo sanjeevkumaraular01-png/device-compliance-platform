@@ -213,6 +213,7 @@ export class DeployService {
     const isLocalOrPrivate = isPrivateOrLocalUrl(server);
     const trustLine = isLocalOrPrivate ? '[Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; ' : '';
     const insecure = isLocalOrPrivate ? ' --insecure-skip-verify' : '';
+    const curlInsecure = isLocalOrPrivate ? '-k ' : '';
     // Downloads the agent .exe and runs enroll + service install with the one-time token.
     return [
       '@echo off',
@@ -230,7 +231,11 @@ export class DeployService {
       'set "EXE=%DIR%\\sem-agent.exe"',
       'if not exist "%DIR%" mkdir "%DIR%"',
       'echo Downloading agent...',
+      `curl.exe -fSL ${curlInsecure}-o "%EXE%" "%EXEURL%"`,
+      'if exist "%EXE%" goto :downloaded',
+      'echo curl unavailable or failed, trying PowerShell...',
       `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ${trustLine}try { Invoke-WebRequest -Uri $env:EXEURL -OutFile $env:EXE -UseBasicParsing } catch { Write-Host $_; exit 1 }"`,
+      ':downloaded',
       'if not exist "%EXE%" ( echo Download failed & pause & exit /b 1 )',
       'echo Enrolling this device...',
       `"%EXE%" enroll --server "%SERVER%" --token "%DEPLOY_TOKEN%"${insecure}`,
