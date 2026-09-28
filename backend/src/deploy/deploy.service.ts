@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppConfigService } from '../config/app-config.service';
 import { AuditService } from '../audit/audit.service';
@@ -65,16 +65,16 @@ export class DeployService {
   async publicConfig() {
     const c = await this.effectiveConfig();
     return {
-      enabled: c.enabled && !!c.imapHost,
+      enabled: c.enabled,
       companyName: c.companyName,
-      allowedDomains: c.allowedDomains,
+      identifier: 'employeeCode' as const,
       agentDownloadUrl: this.msiUrl,
     };
   }
 
   private assertConfigured(c: EffectiveDeployConfig) {
-    if (!c.enabled || !c.imapHost) {
-      throw new ServiceUnavailableException('Self-service deployment is not configured');
+    if (!c.enabled) {
+      throw new ServiceUnavailableException('Self-service deployment is disabled');
     }
   }
 
@@ -82,41 +82,31 @@ export class DeployService {
     return email.split('@')[1]?.toLowerCase() ?? '';
   }
 
-  /** Verify company email, resolve the employee, mint a single-use bound credential. */
-  async createSession(rawEmail: string, password: string, ip: string | null) {
-    const email = rawEmail.trim().toLowerCase();
+  /** Resolve the employee by Employee ID and mint a single-use bound credential.
+   *  No password: the Employee ID is not a secret, so admin approval of each
+   *  self-enrolled device (autoApprove:false) is the security gate. */
+  async createSession(rawCode: string, ip: string | null) {
     const c = await this.effectiveConfig();
     this.assertConfigured(c);
 
-    if (c.allowedDomains.length && !c.allowedDomains.includes(this.domainOf(email))) {
-      await this.audit.log({
-        category: 'AUTH', action: 'deploy.session.rejected', actorType: 'SYSTEM', actorName: email,
-        ipAddress: ip, success: false, metadata: { reason: 'domain_not_allowed' },
-      });
-      throw new ForbiddenException(`Only company email addresses are allowed (${c.allowedDomains.map((d) => '@' + d).join(', ')})`);
-    }
+    const employeeCode = rawCode.trim();
+    if (!employeeCode) throw new BadRequestException('Employee ID is required');
 
-    const result = await this.mail.verify(email, password, {
-      host: c.imapHost, port: c.imapPort, secure: c.imapSecure, allowInsecureTls: c.imapAllowInsecureTls,
-    });
-    if (result === 'UNAVAILABLE') {
-      throw new ServiceUnavailableException('The company mail server could not be reached. Try again shortly.');
-    }
-    if (result === 'INVALID_CREDENTIALS') {
+    const user = await this.prisma.user.findUnique({ where: { employeeCode } });
+    if (!user) {
       await this.audit.log({
-        category: 'AUTH', action: 'deploy.session.failed', actorType: 'SYSTEM', actorName: email,
-        ipAddress: ip, success: false, metadata: { reason: 'invalid_credentials' },
+        category: 'AUTH', action: 'deploy.session.rejected', actorType: 'SYSTEM', actorName: employeeCode,
+        ipAddress: ip, success: false, metadata: { reason: 'employee_not_found' },
       });
-      throw new UnauthorizedException('Incorrect company email or password');
+      throw new UnauthorizedException('Employee ID not recognized. Please contact IT.');
     }
-
-    const user = await this.resolveEmployee(email);
+    if (!user.isActive) throw new ForbiddenException('This account is disabled. Please contact IT.');
 
     const token = randomToken(TOKEN_PREFIX, 32);
     const ttlMs = this.config.deploySessionTtlMin * 60_000;
     const row = await this.prisma.enrollmentToken.create({
       data: {
-        name: `Self-deploy: ${email}`,
+        name: `Self-deploy: ${employeeCode}`,
         tokenHash: sha256Hex(token),
         tokenPrefix: token.substring(0, TOKEN_PREFIX.length + 6),
         platform: 'WINDOWS',
@@ -128,8 +118,8 @@ export class DeployService {
       },
     });
     await this.audit.log({
-      category: 'AUTH', action: 'deploy.session.create', actorType: 'USER', actorId: user.id, actorName: email,
-      resourceType: 'EnrollmentToken', resourceId: row.id, ipAddress: ip, metadata: { email },
+      category: 'AUTH', action: 'deploy.session.create', actorType: 'USER', actorId: user.id, actorName: user.displayName,
+      resourceType: 'EnrollmentToken', resourceId: row.id, ipAddress: ip, metadata: { employeeCode },
     });
 
     const serverUrl = this.config.apiPublicUrl;
@@ -240,7 +230,7 @@ export class DeployService {
       imapHost: c.imapHost,
       imapPort: c.imapPort,
       imapSecure: c.imapSecure,
-      configured: !!c.imapHost,
+      configured: c.enabled,
       installUrl: `${this.config.webUrl}/install`,
       agentDownloadUrl: this.msiUrl,
     };

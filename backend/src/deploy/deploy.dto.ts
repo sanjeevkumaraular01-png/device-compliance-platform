@@ -1,17 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsEmail, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class DeploySessionDto {
-  @ApiProperty({ example: 'jane@company.com' })
-  @IsEmail()
-  @MaxLength(200)
-  email: string;
-
-  @ApiProperty()
+  @ApiProperty({ example: 'EMP-1001' })
   @IsString()
   @MinLength(1)
-  @MaxLength(1024)
-  password: string;
+  @MaxLength(64)
+  employeeCode: string;
 }
 
 export class DeploySettingsDto {

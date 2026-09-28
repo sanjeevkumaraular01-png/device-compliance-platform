@@ -10,8 +10,6 @@ import {
   CheckCircle2,
   Clock,
   Download,
-  Eye,
-  EyeOff,
   Loader2,
   MonitorDown,
   PackageOpen,
@@ -31,8 +29,7 @@ import { cn } from "@/lib/utils";
 import type { DeployConfig, DeploySession, DeployStatus } from "@/types/api";
 
 const signInSchema = z.object({
-  email: z.string().trim().min(1, "Enter your work email").email("Enter a valid email address"),
-  password: z.string().min(1, "Enter your password"),
+  employeeCode: z.string().trim().min(1, "Enter your Employee ID").max(64),
 });
 
 // ─────────────────────────────── Shell ───────────────────────────────
@@ -88,24 +85,6 @@ function Panel({
   );
 }
 
-function PasswordInput(props: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
-  const [show, setShow] = React.useState(false);
-  const { invalid, ...rest } = props;
-  return (
-    <div className="relative">
-      <Input {...rest} type={show ? "text" : "password"} aria-invalid={invalid || undefined} className="pr-9" />
-      <button
-        type="button"
-        onClick={() => setShow((s) => !s)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={show ? "Hide password" : "Show password"}
-      >
-        {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-      </button>
-    </div>
-  );
-}
-
 function InlineError({ error }: { error: React.ReactNode }) {
   if (!error) return null;
   return (
@@ -123,21 +102,20 @@ function sessionErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.status) {
       case 401:
-        return "Incorrect company email or password. Use the same password you use for your company mailbox.";
+        return "Employee ID not recognized. Check the ID with your IT administrator.";
       case 403:
-        // Domain-not-allowed: prefer the server's own explanation when present.
-        return errorMessage(err, "This email domain isn't allowed for self-service enrollment. Contact your IT administrator.");
+        return errorMessage(err, "This account is disabled. Please contact your IT administrator.");
       case 429:
         return "Too many attempts. Please wait a few minutes and try again.";
       case 502:
       case 503:
       case 504:
-        return "The company mail server can't be reached right now (or isn't configured). Please try again shortly or contact IT.";
+        return "Self-service enrollment isn't available right now. Please try again shortly or contact IT.";
       default:
-        return errorMessage(err, "Sign in failed. Please try again.");
+        return errorMessage(err, "Enrollment failed. Please try again.");
     }
   }
-  return errorMessage(err, "Sign in failed. Please try again.");
+  return errorMessage(err, "Enrollment failed. Please try again.");
 }
 
 /** "expires in N minutes" style label from an ISO timestamp; re-renders every 30s. */
@@ -167,51 +145,39 @@ function SignInStep({
   const [submitError, setSubmitError] = React.useState<React.ReactNode>(null);
   const form = useForm<z.infer<typeof signInSchema>>({
     resolver: zodResolver(signInSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { employeeCode: "" },
   });
 
   const onSubmit = form.handleSubmit(async (v) => {
     setSubmitError(null);
     try {
-      const session = await api.post<DeploySession>("/deploy/session", { email: v.email, password: v.password }, { anonymous: true });
-      form.reset({ email: "", password: "" }); // never keep the password around
+      const session = await api.post<DeploySession>("/deploy/session", { employeeCode: v.employeeCode }, { anonymous: true });
       onSuccess(session);
     } catch (e) {
       setSubmitError(sessionErrorMessage(e));
-      form.setValue("password", "");
     }
   });
 
   return (
     <Panel
       icon={ShieldCheck}
-      title="Sign in with your company account"
-      description={`Use your ${companyName} email to set up SecureEndpoint on this Windows device.`}
+      title="Set up your device"
+      description={`Enter your ${companyName} Employee ID to register this Windows device.`}
     >
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
-        <Field label="Work email" htmlFor="email" error={form.formState.errors.email?.message}>
-          <Input
-            id="email"
-            type="email"
-            inputMode="email"
-            autoComplete="username"
-            placeholder="name@company.com"
-            autoFocus
-            aria-invalid={!!form.formState.errors.email || undefined}
-            {...form.register("email")}
-          />
-        </Field>
         <Field
-          label="Password (your company email password)"
-          htmlFor="password"
-          error={form.formState.errors.password?.message}
-          hint="Verified securely with your company mail server. Your password is never stored."
+          label="Employee ID"
+          htmlFor="employeeCode"
+          error={form.formState.errors.employeeCode?.message}
+          hint="The ID assigned to you by IT. Your device will register for admin approval."
         >
-          <PasswordInput
-            id="password"
-            autoComplete="current-password"
-            invalid={!!form.formState.errors.password}
-            {...form.register("password")}
+          <Input
+            id="employeeCode"
+            autoComplete="off"
+            placeholder="EMP-1001"
+            autoFocus
+            aria-invalid={!!form.formState.errors.employeeCode || undefined}
+            {...form.register("employeeCode")}
           />
         </Field>
         <InlineError error={submitError} />

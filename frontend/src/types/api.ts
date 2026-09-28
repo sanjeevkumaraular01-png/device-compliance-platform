@@ -1113,7 +1113,7 @@ export type SystemSettings = Record<string, unknown>;
 export interface DeployConfig {
   enabled: boolean;
   companyName: string;
-  allowedDomains: string[];
+  identifier?: "employeeCode";
   agentDownloadUrl: string;
 }
 
