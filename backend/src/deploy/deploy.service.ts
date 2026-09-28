@@ -92,7 +92,9 @@ export class DeployService {
     const employeeCode = rawCode.trim();
     if (!employeeCode) throw new BadRequestException('Employee ID is required');
 
-    const user = await this.prisma.user.findUnique({ where: { employeeCode } });
+    // Case-insensitive match so employees don't have to reproduce the exact casing
+    // of their Employee ID (e.g. CSS0004 / css0004 both resolve).
+    const user = await this.prisma.user.findFirst({ where: { employeeCode: { equals: employeeCode, mode: 'insensitive' } } });
     if (!user) {
       await this.audit.log({
         category: 'AUTH', action: 'deploy.session.rejected', actorType: 'SYSTEM', actorName: employeeCode,
