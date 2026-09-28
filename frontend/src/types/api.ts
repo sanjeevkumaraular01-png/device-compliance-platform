@@ -1159,10 +1159,10 @@ export interface DeploySettings {
 export interface DeploySettingsInput {
   enabled: boolean;
   companyName: string;
-  allowedDomains: string[];
-  imapHost: string;
-  imapPort: number;
-  imapSecure: boolean;
+  allowedDomains?: string[];
+  imapHost?: string;
+  imapPort?: number;
+  imapSecure?: boolean;
 }
 
 // ─────────────────────────────── Workforce ───────────────────────────────

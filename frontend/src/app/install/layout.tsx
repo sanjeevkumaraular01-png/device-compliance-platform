@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 // crucially, no authentication gate. Employees reach it without a SecureEndpoint account.
 export const metadata: Metadata = {
   title: "Install the agent",
-  description: "Set up SecureEndpoint on your Windows device by signing in with your company email.",
+  description: "Set up SecureEndpoint on your Windows device by entering your Employee ID.",
 };
 
 export default function InstallLayout({ children }: { children: React.ReactNode }) {
