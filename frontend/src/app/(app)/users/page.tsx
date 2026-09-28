@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Pencil, ShieldCheck, ShieldOff, Unlock, UserCheck, UserPlus, UserX, Users } from "lucide-react";
+import { FileUp, MoreHorizontal, Pencil, ShieldCheck, ShieldOff, Unlock, UserCheck, UserPlus, UserX, Users } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable } from "@/components/data-table/data-table";
 import { ClearFiltersButton, FilterSelect, enumOptions } from "@/components/data-table/filters";
@@ -30,6 +30,7 @@ import { initials } from "@/lib/utils";
 import { ROLE_KEYS, type User } from "@/types/api";
 import { roleMeta, userStatus, userStatusMeta } from "@/components/users/role-meta";
 import { CreateUserDialog, EditUserSheet } from "@/components/users/user-dialogs";
+import { UsersImportDialog } from "@/components/users/users-import-dialog";
 import { authProviderLabel } from "@/components/audit/audit-meta";
 
 type UserAction = "reset-mfa" | "unlock" | "deactivate" | "reactivate";
@@ -40,6 +41,7 @@ export default function UsersPage() {
   const confirm = useConfirm();
   const departments = useDepartments();
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<User | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
 
@@ -271,9 +273,14 @@ export default function UsersPage() {
         description="Console accounts, their roles, departments and sign-in security."
         actions={
           canWrite ? (
-            <Button onClick={() => setCreateOpen(true)}>
-              <UserPlus /> Add user
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <FileUp /> Import CSV
+              </Button>
+              <Button onClick={() => setCreateOpen(true)}>
+                <UserPlus /> Add user
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -329,6 +336,7 @@ export default function UsersPage() {
       />
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <UsersImportDialog open={importOpen} onOpenChange={setImportOpen} />
       <EditUserSheet user={editing} open={editOpen} onOpenChange={setEditOpen} />
     </>
   );

@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, P
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { AuthUser } from '../common/types';
-import { CreateUserDto, UpdateUserDto, UserQueryDto } from './users.dto';
+import { CreateUserDto, ImportUsersDto, UpdateUserDto, UserQueryDto } from './users.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('users')
@@ -27,6 +27,13 @@ export class UsersController {
   @RequirePermissions('users:write')
   create(@Body() dto: CreateUserDto, @CurrentUser() user: AuthUser) {
     return this.users.create(dto, user);
+  }
+
+  @Post('import')
+  @RequirePermissions('users:write')
+  @HttpCode(200)
+  import(@Body() dto: ImportUsersDto, @CurrentUser() user: AuthUser) {
+    return this.users.importUsers(dto, user);
   }
 
   @Patch(':id')

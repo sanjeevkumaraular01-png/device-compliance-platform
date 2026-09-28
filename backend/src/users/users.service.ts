@@ -8,7 +8,7 @@ import { hashPassword, passwordPolicyViolations } from '../auth/password.util';
 import { orderBy, paginated, skipTake } from '../common/dto/pagination.dto';
 import { userScope } from '../common/scope';
 import type { AuthUser } from '../common/types';
-import { CreateUserDto, UpdateUserDto, UserQueryDto } from './users.dto';
+import { CreateUserDto, ImportUsersDto, UpdateUserDto, UserQueryDto } from './users.dto';
 
 const PRIVILEGED = ['SUPER_ADMIN'];
 
@@ -135,6 +135,89 @@ export class UsersService {
     const out = this.serialize(u);
     await this.audit.log({ category: 'USER_ACTION', action: 'user.create', resourceType: 'User', resourceId: u.id, after: out });
     return out;
+  }
+
+  /** Bulk create/update employees from a parsed CSV (matched by email). */
+  async importUsers(dto: ImportUsersDto, actor: AuthUser) {
+    const rows = dto.rows ?? [];
+    const depts = await this.prisma.department.findMany({ select: { id: true, name: true, code: true } });
+    const deptByName = new Map(depts.map((d) => [d.name.toLowerCase(), d.id]));
+    const deptByCode = new Map(depts.map((d) => [d.code.toUpperCase(), d.id]));
+    const roles = await this.prisma.role.findMany({ select: { id: true, key: true } });
+    const roleByKey = new Map(roles.map((r) => [r.key as string, r.id]));
+    const employeeRoleId = roleByKey.get('EMPLOYEE');
+    if (!employeeRoleId) throw new BadRequestException('EMPLOYEE role is not configured');
+
+    const result = { created: 0, updated: 0, skipped: 0, errors: [] as { email: string; error: string }[] };
+    const seen = new Set<string>();
+    const managerLinks: { email: string; managerEmail: string }[] = [];
+
+    for (const row of rows) {
+      const email = row.email;
+      try {
+        if (seen.has(email)) {
+          result.skipped++;
+          continue;
+        }
+        seen.add(email);
+
+        let roleId = employeeRoleId;
+        if (row.roleKey) {
+          if (row.roleKey === 'SUPER_ADMIN' && actor.roleKey !== 'SUPER_ADMIN') {
+            throw new Error('Only a Super Admin can import a Super Admin');
+          }
+          roleId = roleByKey.get(row.roleKey) ?? employeeRoleId;
+        }
+
+        let departmentId: string | null | undefined;
+        if (row.department) {
+          const key = row.department.trim();
+          departmentId = deptByName.get(key.toLowerCase()) ?? deptByCode.get(key.toUpperCase());
+          if (!departmentId) throw new Error(`Unknown department "${row.department}"`);
+        }
+
+        const data = {
+          displayName: row.displayName.trim(),
+          employeeCode: row.employeeCode?.trim() || null,
+          jobTitle: row.jobTitle?.trim() || null,
+          location: row.location?.trim() || null,
+          ...(departmentId ? { departmentId } : {}),
+        };
+
+        const existing = await this.prisma.user.findUnique({ where: { email } });
+        if (existing) {
+          await this.prisma.user.update({ where: { id: existing.id }, data: { ...data, roleId } });
+          result.updated++;
+        } else {
+          await this.prisma.user.create({ data: { email, roleId, authProvider: 'LOCAL', ...data } });
+          result.created++;
+        }
+        if (row.managerEmail) managerLinks.push({ email, managerEmail: row.managerEmail });
+      } catch (e) {
+        const msg = (e as Error).message || 'Import failed';
+        result.errors.push({ email, error: /unique constraint/i.test(msg) ? 'Employee ID already used by another user' : msg });
+      }
+    }
+
+    // Resolve manager relationships now that all users exist.
+    if (managerLinks.length) {
+      const emails = Array.from(new Set(managerLinks.flatMap((l) => [l.email, l.managerEmail])));
+      const users = await this.prisma.user.findMany({ where: { email: { in: emails } }, select: { id: true, email: true } });
+      const idByEmail = new Map(users.map((u) => [u.email, u.id]));
+      for (const l of managerLinks) {
+        const uid = idByEmail.get(l.email);
+        const mid = idByEmail.get(l.managerEmail);
+        if (uid && mid && uid !== mid) await this.prisma.user.update({ where: { id: uid }, data: { managerId: mid } });
+      }
+    }
+
+    await this.audit.log({
+      category: 'USER_ACTION',
+      action: 'user.import',
+      resourceType: 'User',
+      metadata: { created: result.created, updated: result.updated, skipped: result.skipped, errors: result.errors.length },
+    });
+    return result;
   }
 
   async update(id: string, dto: UpdateUserDto, actor: AuthUser) {
