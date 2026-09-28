@@ -58,7 +58,9 @@ export class DeployService {
     return this.config.deployDownloadBaseUrl;
   }
   private get msiUrl() {
-    return `${this.downloadBase}/SecureEndpoint-Agent-x64.msi`;
+    // The MSI is not built yet; the one-click setup.cmd and manual flow use the
+    // agent .exe, which is what /downloads actually serves.
+    return `${this.downloadBase}/sem-agent-windows-amd64.exe`;
   }
 
   /** Public info for the /install page (no secrets). */
@@ -199,22 +201,38 @@ export class DeployService {
       throw new UnauthorizedException('This deployment link is invalid or has expired. Please sign in again.');
     }
     const server = this.config.apiPublicUrl;
-    const msi = this.msiUrl;
-    // Downloads the MSI to %TEMP% and installs it with the one-time token as an MSI property.
+    const base = this.downloadBase;
+    // A self-signed cert is used on localhost dev; trust it (and skip agent TLS verify)
+    // only for localhost/127.0.0.1 — a real domain must present a valid certificate.
+    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(server);
+    const trustLine = isLocal ? '[Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; ' : '';
+    const insecure = isLocal ? ' --insecure-skip-verify' : '';
+    // Downloads the agent .exe and runs enroll + service install with the one-time token.
     return [
       '@echo off',
       'setlocal',
       'echo Installing SecureEndpoint Agent...',
+      'net session >nul 2>&1',
+      'if %errorlevel% NEQ 0 ( echo Please right-click this file and choose "Run as administrator". & pause & exit /b 1 )',
       `set "SERVER=${server}"`,
       `set "DEPLOY_TOKEN=${token}"`,
-      `set "MSIURL=${msi}"`,
-      'set "MSI=%TEMP%\\SecureEndpoint-Agent-x64.msi"',
-      'powershell -NoProfile -Command "try { Invoke-WebRequest -Uri $env:MSIURL -OutFile $env:MSI -UseBasicParsing } catch { Write-Host $_; exit 1 }"',
-      'if not exist "%MSI%" ( echo Download failed & pause & exit /b 1 )',
-      'msiexec /i "%MSI%" SERVER="%SERVER%" DEPLOY_TOKEN="%DEPLOY_TOKEN%" /qb /norestart',
-      'if %ERRORLEVEL% NEQ 0 ( echo Install failed (%ERRORLEVEL%) & pause & exit /b %ERRORLEVEL% )',
+      `set "BASE=${base}"`,
+      'set "ARCH=amd64"',
+      'if /I "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "ARCH=arm64"',
+      'set "EXEURL=%BASE%/sem-agent-windows-%ARCH%.exe"',
+      'set "DIR=%ProgramFiles%\\SecureEndpoint"',
+      'set "EXE=%DIR%\\sem-agent.exe"',
+      'if not exist "%DIR%" mkdir "%DIR%"',
+      'echo Downloading agent...',
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ${trustLine}try { Invoke-WebRequest -Uri $env:EXEURL -OutFile $env:EXE -UseBasicParsing } catch { Write-Host $_; exit 1 }"`,
+      'if not exist "%EXE%" ( echo Download failed & pause & exit /b 1 )',
+      'echo Enrolling this device...',
+      `"%EXE%" enroll --server "%SERVER%" --token "%DEPLOY_TOKEN%"${insecure}`,
+      'if %ERRORLEVEL% NEQ 0 ( echo Enrollment failed (%ERRORLEVEL%) & pause & exit /b %ERRORLEVEL% )',
+      '"%EXE%" install',
+      '"%EXE%" start',
       'echo.',
-      'echo SecureEndpoint Agent installed. Your device is now registering.',
+      'echo SecureEndpoint Agent installed. Your device is now registering for admin approval.',
       'echo You can close this window.',
       'timeout /t 8 >nul',
       'endlocal',

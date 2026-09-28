@@ -191,7 +191,8 @@ function SignInStep({
 
 function DownloadStep({ session, onReset }: { session: DeploySession; onReset: () => void }) {
   const expiry = useExpiryLabel(session.expiresAt);
-  const manualCommand = `msiexec /i SecureEndpoint-Agent-x64.msi SERVER=${session.serverUrl} DEPLOY_TOKEN=${session.deployToken}`;
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(session.serverUrl);
+  const manualCommand = `sem-agent.exe enroll --server ${session.serverUrl} --token ${session.deployToken}${isLocal ? " --insecure-skip-verify" : ""}`;
 
   const steps = [
     <>Download the installer using a button above.</>,
@@ -214,7 +215,7 @@ function DownloadStep({ session, onReset }: { session: DeploySession; onReset: (
           </Button>
           <Button variant="outline" className="w-full" asChild>
             <a href={session.downloadUrl}>
-              <PackageOpen /> Download MSI
+              <PackageOpen /> Download agent (.exe)
             </a>
           </Button>
         </div>
