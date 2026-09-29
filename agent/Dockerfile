@@ -12,7 +12,7 @@ ENV CGO_ENABLED=0 GOFLAGS=-buildvcs=false GOTOOLCHAIN=local
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-ARG VERSION=1.0.0
+ARG VERSION=
 ARG SKIP_TESTS=0
 RUN if [ "$SKIP_TESTS" != "1" ]; then \
       go vet ./... && GOOS=windows go vet ./... && GOOS=darwin go vet ./... && go test -count=1 ./... ; \
