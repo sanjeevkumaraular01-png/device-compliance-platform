@@ -19,7 +19,7 @@ RUN if [ "$SKIP_TESTS" != "1" ]; then \
     fi
 RUN VERSION="$VERSION" OUT=/downloads BIN=/tmp/bin sh scripts/build-dist.sh
 
-FROM busybox:1.36
+FROM busybox:1.38
 LABEL org.opencontainers.image.title="sem-agent-dist" \
       org.opencontainers.image.description="SecureEndpoint agent binaries and install scripts for the /downloads/ volume"
 COPY --from=build /downloads /downloads
