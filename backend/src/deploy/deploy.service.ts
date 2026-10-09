@@ -4,7 +4,8 @@ import { AppConfigService } from '../config/app-config.service';
 import { AuditService } from '../audit/audit.service';
 import { randomToken, sha256Hex } from '../common/crypto.service';
 import { MailVerifier } from './mail-verifier';
-import { DeploySettingsDto } from './deploy.dto';
+import { NoticeService } from '../hr/notice.service';
+import { DeploySettingsDto, NoticeAcknowledgementDto } from './deploy.dto';
 
 const TOKEN_PREFIX = 'sem_enr_'; // reuse the enrollment-token format so /agent/enroll accepts it
 
@@ -41,6 +42,7 @@ export class DeployService {
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
     private readonly mail: MailVerifier,
+    private readonly notices: NoticeService,
   ) {}
 
   /** Settings (admin overrides) take precedence over env defaults. */
@@ -71,11 +73,14 @@ export class DeployService {
   /** Public info for the /install page (no secrets). */
   async publicConfig() {
     const c = await this.effectiveConfig();
+    const notice = await this.notices.current();
     return {
       enabled: c.enabled,
       companyName: c.companyName,
       identifier: 'employeeCode' as const,
       agentDownloadUrl: this.msiUrl,
+      // Shown on /install; must be acknowledged before an install link is issued.
+      notice: notice ? { version: notice.version, title: notice.title, body: notice.body } : null,
     };
   }
 
@@ -92,7 +97,7 @@ export class DeployService {
   /** Resolve the employee by Employee ID and mint a single-use bound credential.
    *  No password: the Employee ID is not a secret, so admin approval of each
    *  self-enrolled device (autoApprove:false) is the security gate. */
-  async createSession(rawCode: string, ip: string | null) {
+  async createSession(rawCode: string, ip: string | null, ack?: NoticeAcknowledgementDto, userAgent?: string | null) {
     const c = await this.effectiveConfig();
     this.assertConfigured(c);
 
@@ -110,6 +115,13 @@ export class DeployService {
       throw new UnauthorizedException('Employee ID not recognized. Please contact IT.');
     }
     if (!user.isActive) throw new ForbiddenException('This account is disabled. Please contact IT.');
+
+    // Transparency: when a monitoring notice is published, the employee must read and
+    // sign it before any install link is issued. The signature is stored per version.
+    if (await this.notices.current()) {
+      if (!ack?.accepted) throw new BadRequestException('Please read and accept the monitoring notice before installing.');
+      await this.notices.acknowledge(user.id, ack, 'INSTALL', ip, userAgent ?? null);
+    }
 
     const token = randomToken(TOKEN_PREFIX, 32);
     const ttlMs = this.config.deploySessionTtlMin * 60_000;

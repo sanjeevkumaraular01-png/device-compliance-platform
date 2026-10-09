@@ -32,6 +32,7 @@ import { DevicesModule } from './devices/devices.module';
 import { DeviceGroupsModule } from './device-groups/device-groups.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { DeployModule } from './deploy/deploy.module';
+import { HrModule } from './hr/hr.module';
 import { SoftwareModule } from './software/software.module';
 import { UsbModule } from './usb/usb.module';
 import { SecurityModule } from './security/security.module';
@@ -118,6 +119,7 @@ import { AiModule } from './ai/ai.module';
     DeviceGroupsModule,
     EnrollmentModule,
     DeployModule,
+    HrModule,
     SoftwareModule,
     UsbModule,
     SecurityModule,

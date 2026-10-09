@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+
+export class NoticeAcknowledgementDto {
+  @ApiProperty() @Type(() => Number) @IsInt() @Min(1) noticeVersion: number;
+  @ApiProperty() @IsString() @MinLength(2) @MaxLength(200) signedName: string;
+  @ApiProperty() @IsBoolean() accepted: boolean;
+}
 
 export class DeploySessionDto {
   @ApiProperty({ example: 'EMP-1001' })
@@ -7,6 +14,13 @@ export class DeploySessionDto {
   @MinLength(1)
   @MaxLength(64)
   employeeCode: string;
+
+  /** Required when a monitoring notice is published. */
+  @ApiPropertyOptional({ type: NoticeAcknowledgementDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NoticeAcknowledgementDto)
+  acknowledgement?: NoticeAcknowledgementDto;
 }
 
 export class DeploySettingsDto {

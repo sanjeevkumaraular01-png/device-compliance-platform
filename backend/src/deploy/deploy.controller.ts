@@ -30,7 +30,7 @@ export class DeployController {
   @SkipIpRestriction()
   @Throttle({ default: { limit: authLimit, ttl: authTtl } })
   session(@Body() dto: DeploySessionDto, @Req() req: Request) {
-    return this.deploy.createSession(dto.employeeCode, clientIp(req) ?? null);
+    return this.deploy.createSession(dto.employeeCode, clientIp(req) ?? null, dto.acknowledgement, req.headers['user-agent'] ?? null);
   }
 
   @Get('status')

@@ -1115,6 +1115,69 @@ export interface DeployConfig {
   companyName: string;
   identifier?: "employeeCode";
   agentDownloadUrl: string;
+  /** Monitoring notice the employee must read and sign before installing (null = none published). */
+  notice?: { version: number; title: string; body: string } | null;
+}
+
+// ─────────────────────────────── HR ───────────────────────────────
+
+export type AcknowledgementStatus = "SIGNED" | "OUTDATED" | "NONE" | "NOT_REQUIRED";
+
+export interface HrDirectoryRow {
+  id: string;
+  displayName: string;
+  email: string;
+  employeeCode: string | null;
+  jobTitle: string | null;
+  location: string | null;
+  isActive: boolean;
+  createdAt: string;
+  role: { key: RoleKey; name: string };
+  department: NamedRef | null;
+  workProfile: { id: string; key: WorkProfileKey; name: string } | null;
+  assignedDevices: { id: string; deviceName: string; status: DeviceStatus; platform: OsPlatform; lastSeenAt: string | null }[];
+  acknowledgement: {
+    status: AcknowledgementStatus;
+    latest: { noticeVersion: number; signedName: string; method: string; acknowledgedAt: string } | null;
+  };
+}
+
+export interface HrDirectory extends Paginated<HrDirectoryRow> {
+  currentNoticeVersion: number | null;
+}
+
+export interface MonitoringNotice {
+  version: number;
+  title: string;
+  body: string;
+  createdAt: string;
+  createdBy?: { id: string; displayName: string } | null;
+  _count?: { acknowledgements: number };
+}
+
+export interface PolicyAcknowledgementRecord {
+  id: string;
+  noticeVersion: number;
+  signedName: string;
+  method: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  acknowledgedAt: string;
+}
+
+export interface OnboardResult {
+  installUrl: string;
+  employeeCode: string;
+  email: string;
+  emailed: boolean;
+  instructions: string;
+}
+
+export interface OffboardResult {
+  deactivated: boolean;
+  retiredDevices: string[];
+  failedDevices: { deviceName: string; error: string }[];
+  enrollmentLinksRevoked: number;
 }
 
 /** `POST /deploy/session` response — the personalized, single-use deployment credential. */

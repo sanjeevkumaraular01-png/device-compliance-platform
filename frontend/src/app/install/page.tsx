@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, CopyButton } from "@/components/common/misc";
 import { ShieldLogo } from "@/components/layout/logo";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
@@ -105,6 +106,8 @@ function sessionErrorMessage(err: unknown): string {
         return "Employee ID not recognized. Check the ID with your IT administrator.";
       case 403:
         return errorMessage(err, "This account is disabled. Please contact your IT administrator.");
+      case 409:
+        return "The monitoring notice was just updated. Please reload this page, read the new version and sign again.";
       case 429:
         return "Too many attempts. Please wait a few minutes and try again.";
       case 502:
@@ -137,21 +140,37 @@ function useExpiryLabel(expiresAt: string | undefined): string | null {
 
 function SignInStep({
   companyName,
+  notice,
   onSuccess,
 }: {
   companyName: string;
+  notice: DeployConfig["notice"];
   onSuccess: (session: DeploySession) => void;
 }) {
   const [submitError, setSubmitError] = React.useState<React.ReactNode>(null);
+  const [accepted, setAccepted] = React.useState(false);
+  const [signedName, setSignedName] = React.useState("");
   const form = useForm<z.infer<typeof signInSchema>>({
     resolver: zodResolver(signInSchema),
     defaultValues: { employeeCode: "" },
   });
+  const signatureOk = !notice || (accepted && signedName.trim().length >= 2);
 
   const onSubmit = form.handleSubmit(async (v) => {
     setSubmitError(null);
+    if (!signatureOk) {
+      setSubmitError("Please read the monitoring notice, tick the box and type your full name to sign it.");
+      return;
+    }
     try {
-      const session = await api.post<DeploySession>("/deploy/session", { employeeCode: v.employeeCode }, { anonymous: true });
+      const session = await api.post<DeploySession>(
+        "/deploy/session",
+        {
+          employeeCode: v.employeeCode,
+          ...(notice ? { acknowledgement: { noticeVersion: notice.version, signedName: signedName.trim(), accepted } } : {}),
+        },
+        { anonymous: true },
+      );
       onSuccess(session);
     } catch (e) {
       setSubmitError(sessionErrorMessage(e));
@@ -165,6 +184,28 @@ function SignInStep({
       description={`Enter your ${companyName} Employee ID to register this Windows device.`}
     >
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+        {notice && (
+          <div className="grid gap-3 rounded-md border p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold">{notice.title}</h2>
+              <span className="shrink-0 text-[11px] text-muted-foreground">Version {notice.version}</span>
+            </div>
+            <div
+              className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded bg-muted/40 p-3 text-xs leading-relaxed"
+              tabIndex={0}
+              aria-label="Monitoring notice text"
+            >
+              {notice.body}
+            </div>
+            <label htmlFor="ack-accept" className="flex items-start gap-2 text-xs">
+              <Checkbox id="ack-accept" checked={accepted} onCheckedChange={(v) => setAccepted(v === true)} className="mt-0.5" />
+              <span>I have read and understood this notice.</span>
+            </label>
+            <Field label="Type your full name to sign" htmlFor="ack-name">
+              <Input id="ack-name" autoComplete="name" value={signedName} onChange={(e) => setSignedName(e.target.value)} placeholder="Full name" maxLength={200} />
+            </Field>
+          </div>
+        )}
         <Field
           label="Employee ID"
           htmlFor="employeeCode"
@@ -181,8 +222,8 @@ function SignInStep({
           />
         </Field>
         <InlineError error={submitError} />
-        <Button type="submit" className="w-full" loading={form.formState.isSubmitting}>
-          Continue
+        <Button type="submit" className="w-full" loading={form.formState.isSubmitting} disabled={!signatureOk}>
+          {notice ? "Sign and continue" : "Continue"}
         </Button>
       </form>
     </Panel>
@@ -401,6 +442,7 @@ export default function InstallPage() {
       {!session ? (
         <SignInStep
           companyName={config.data.companyName || "company"}
+          notice={config.data.notice ?? null}
           onSuccess={setSession}
         />
       ) : enrolled && status.data ? (

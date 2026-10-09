@@ -26,6 +26,7 @@ import {
   ShieldHalf,
   Usb,
   Users,
+  IdCard,
   Wrench,
 } from "lucide-react";
 import type { RoleKey } from "@/types/api";
@@ -154,6 +155,7 @@ export const NAV: NavGroup[] = [
   {
     label: "Administration",
     items: [
+      { title: "Employees (HR)", href: "/hr", icon: IdCard, permissions: ["users:read"], hideForRoles: ["EMPLOYEE"], keywords: ["hr", "directory", "onboarding", "offboarding", "leaver", "notice", "consent", "acknowledgement"] },
       { title: "Users", href: "/users", icon: Users, permissions: ["users:read"], keywords: ["accounts", "people"] },
       { title: "Departments", href: "/departments", icon: Building2, permissions: ["users:read"], keywords: ["teams", "org"] },
       { title: "Roles", href: "/roles", icon: KeyRound, permissions: ["users:read", "roles:write"], keywords: ["permissions", "rbac"] },

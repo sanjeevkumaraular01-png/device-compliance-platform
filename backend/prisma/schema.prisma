@@ -364,6 +364,8 @@ model User {
   aiInsights       AiInsight[]
   workAlerts       Alert[]           @relation("AlertSubjectUser")
   directReports    User[]            @relation("UserManager")
+  acknowledgements PolicyAcknowledgement[]
+  noticesAuthored  MonitoringNotice[] @relation("NoticeAuthor")
 
   @@unique([authProvider, externalId])
   @@index([roleId])
@@ -1052,6 +1054,40 @@ model ReportSchedule {
   createdAt   DateTime     @default(now()) @map("created_at")
 
   @@map("report_schedules")
+}
+
+// Employee monitoring notice shown before agent installation. Versions are
+// immutable: editing the notice creates a new version, so an acknowledgement
+// always points at the exact text the employee accepted (DPDP/GDPR evidence).
+model MonitoringNotice {
+  version     Int      @id
+  title       String
+  body        String
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdBy   User?    @relation("NoticeAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  acknowledgements PolicyAcknowledgement[]
+
+  @@map("monitoring_notices")
+}
+
+// An employee's signed acknowledgement of a specific notice version.
+model PolicyAcknowledgement {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noticeVersion  Int              @map("notice_version")
+  notice         MonitoringNotice @relation(fields: [noticeVersion], references: [version], onDelete: Restrict)
+  signedName     String           @map("signed_name")
+  method         String // INSTALL (on /install before download) | WEB (signed in to the console)
+  ipAddress      String?          @map("ip_address")
+  userAgent      String?          @map("user_agent")
+  acknowledgedAt DateTime         @default(now()) @map("acknowledged_at")
+
+  @@unique([userId, noticeVersion])
+  @@index([noticeVersion])
+  @@map("policy_acknowledgements")
 }
 
 model SystemSetting {
