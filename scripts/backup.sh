@@ -10,6 +10,8 @@
 # The device CA private key lives in the data volume — treat these backups as
 # secret and store them encrypted, off-host.
 set -euo pipefail
+# Backups hold the device CA key and encrypted secrets: owner-only files.
+umask 077
 cd "$(dirname "$0")/.."
 # Robust on both Linux hosts and Windows Git Bash (Docker needs native paths).
 export MSYS_NO_PATHCONV=1
