@@ -390,7 +390,7 @@ services:
   grafana:
     <<: *hardening
     profiles: [monitoring]
-    image: grafana/grafana:11.3.0
+    image: grafana/grafana:13.2.2
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
