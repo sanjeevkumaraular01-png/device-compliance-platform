@@ -39,7 +39,7 @@
     "argon2": "^0.44.0",
     "bullmq": "^5.58.7",
     "class-transformer": "^0.5.1",
-    "class-validator": "^0.14.2",
+    "class-validator": "^0.15.1",
     "cron-parser": "^4.9.0",
     "dotenv": "^17.4.1",
     "exceljs": "^4.4.0",
