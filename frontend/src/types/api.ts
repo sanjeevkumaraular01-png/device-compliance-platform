@@ -1085,6 +1085,9 @@ export interface Department {
   policy?: NamedRef | null;
   createdAt: string;
   updatedAt: string;
+  /** Returned by GET /departments. */
+  userCount?: number;
+  deviceCount?: number;
   _count?: { users?: number; devices?: number };
 }
 

@@ -3,11 +3,13 @@
 import * as React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useQuery } from "@tanstack/react-query";
-import { Building2, Laptop, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { Building2, LayoutGrid, Laptop, List, Pencil, Plus, Search, Trash2, UserRound, Users } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
+import { CardSkeleton, EmptyState, ErrorState } from "@/components/common/states";
 import { DataTable } from "@/components/data-table/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { useConfirm } from "@/components/common/confirm-dialog";
 import { normalizeList } from "@/hooks/use-list-query";
@@ -15,8 +17,13 @@ import { useApiMutation } from "@/hooks/use-api-mutation";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { Department, Paginated } from "@/types/api";
 import { DepartmentDialog } from "@/components/departments/department-dialog";
+import { DepartmentCard, departmentAccent, departmentDevices, departmentUsers } from "@/components/departments/department-card";
+
+type View = "cards" | "table";
+const VIEW_KEY = "sem.departments.view";
 
 export default function DepartmentsPage() {
   const { can } = useAuth();
@@ -25,6 +32,24 @@ export default function DepartmentsPage() {
   const [search, setSearch] = React.useState("");
   const [editing, setEditing] = React.useState<Department | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [view, setViewState] = React.useState<View>("cards");
+
+  React.useEffect(() => {
+    try {
+      const v = localStorage.getItem(VIEW_KEY);
+      if (v === "cards" || v === "table") setViewState(v);
+    } catch {
+      /* storage unavailable: keep the default view */
+    }
+  }, []);
+  const setView = (v: View) => {
+    setViewState(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const query = useQuery({
     queryKey: ["departments", "list"],
@@ -43,8 +68,19 @@ export default function DepartmentsPage() {
     );
   }, [query.data, search]);
 
-  const hasUserCounts = (query.data ?? []).some((d) => d._count?.users !== undefined);
-  const hasDeviceCounts = (query.data ?? []).some((d) => d._count?.devices !== undefined);
+  const hasUserCounts = (query.data ?? []).some((d) => departmentUsers(d) !== undefined);
+  const hasDeviceCounts = (query.data ?? []).some((d) => departmentDevices(d) !== undefined);
+
+  const summary = React.useMemo(() => {
+    const data = query.data ?? [];
+    return {
+      departments: data.length,
+      employees: hasUserCounts ? data.reduce((n, d) => n + (departmentUsers(d) ?? 0), 0) : undefined,
+      devices: hasDeviceCounts ? data.reduce((n, d) => n + (departmentDevices(d) ?? 0), 0) : undefined,
+      noManager: data.filter((d) => !d.manager).length,
+      customPolicy: data.filter((d) => d.policy).length,
+    };
+  }, [query.data, hasUserCounts, hasDeviceCounts]);
 
   const { mutate: removeDepartment } = useApiMutation((d: Department) => api.delete(`/departments/${d.id}`), {
     success: (_r, d) => `Department ${d.name} deleted`,
@@ -58,8 +94,8 @@ export default function DepartmentsPage() {
 
   const onDelete = React.useCallback(
     async (d: Department) => {
-      const members = d._count?.users ?? 0;
-      const devices = d._count?.devices ?? 0;
+      const members = departmentUsers(d) ?? 0;
+      const devices = departmentDevices(d) ?? 0;
       if (
         await confirm({
           title: `Delete ${d.name}?`,
@@ -93,7 +129,7 @@ export default function DepartmentsPage() {
         meta: { label: "Name" },
         cell: ({ row }) => (
           <div className="flex min-w-0 items-center gap-2">
-            <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
+            <span className={cn("grid size-7 shrink-0 place-items-center rounded-md", departmentAccent(row.original.code))}>
               <Building2 className="size-3.5" />
             </span>
             <span className="max-w-[14rem] truncate font-medium">{row.original.name}</span>
@@ -154,11 +190,11 @@ export default function DepartmentsPage() {
       cols.push({
         id: "users",
         header: "Users",
-        accessorFn: (d) => d._count?.users ?? 0,
+        accessorFn: (d) => departmentUsers(d) ?? 0,
         meta: { label: "Users", className: "text-right tabular-nums", headerClassName: "text-right" },
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-1 text-xs">
-            <Users className="size-3 text-muted-foreground" /> {formatNumber(row.original._count?.users ?? 0)}
+            <Users className="size-3 text-muted-foreground" /> {formatNumber(departmentUsers(row.original) ?? 0)}
           </span>
         ),
       });
@@ -167,11 +203,11 @@ export default function DepartmentsPage() {
       cols.push({
         id: "devices",
         header: "Devices",
-        accessorFn: (d) => d._count?.devices ?? 0,
+        accessorFn: (d) => departmentDevices(d) ?? 0,
         meta: { label: "Devices", className: "text-right tabular-nums", headerClassName: "text-right" },
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-1 text-xs">
-            <Laptop className="size-3 text-muted-foreground" /> {formatNumber(row.original._count?.devices ?? 0)}
+            <Laptop className="size-3 text-muted-foreground" /> {formatNumber(departmentDevices(row.original) ?? 0)}
           </span>
         ),
       });
@@ -202,6 +238,18 @@ export default function DepartmentsPage() {
     return cols;
   }, [canWrite, hasDeviceCounts, hasUserCounts, onDelete, openEdit]);
 
+  const emptyProps = {
+    icon: Building2,
+    title: search ? "No matching departments" : "No departments yet",
+    description: search ? "Try a different search term." : "Create departments to group users and devices.",
+    action:
+      canWrite && !search ? (
+        <Button size="sm" variant="outline" onClick={() => openEdit(null)}>
+          <Plus /> New department
+        </Button>
+      ) : undefined,
+  };
+
   return (
     <>
       <PageHeader
@@ -216,29 +264,125 @@ export default function DepartmentsPage() {
           ) : undefined
         }
       />
-      <DataTable
-        columns={columns}
-        data={rows}
-        loading={query.isLoading}
-        fetching={query.isFetching}
-        error={query.error}
-        onRetry={() => query.refetch()}
-        getRowId={(d) => d.id}
-        onRowClick={canWrite ? (d) => openEdit(d) : undefined}
-        search={{ value: search, onChange: setSearch, placeholder: "Search departments…" }}
-        empty={{
-          icon: Building2,
-          title: search ? "No matching departments" : "No departments yet",
-          description: search ? "Try a different search term." : "Create departments to group users and devices.",
-          action:
-            canWrite && !search ? (
-              <Button size="sm" variant="outline" onClick={() => openEdit(null)}>
-                <Plus /> New department
-              </Button>
-            ) : undefined,
-        }}
-      />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <SummaryTile icon={Building2} label="Departments" value={query.isLoading ? undefined : summary.departments} />
+        <SummaryTile icon={Users} label="Employees" value={query.isLoading ? undefined : summary.employees} />
+        <SummaryTile icon={Laptop} label="Devices" value={query.isLoading ? undefined : summary.devices} />
+        <SummaryTile
+          icon={UserRound}
+          label="Without a manager"
+          value={query.isLoading ? undefined : summary.noManager}
+          hint={query.isLoading ? undefined : `${summary.customPolicy} with a custom policy`}
+          warn={!query.isLoading && summary.noManager > 0}
+        />
+      </div>
+
+      {view === "cards" ? (
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="relative w-full max-w-xs">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="department-search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search departments…"
+                className="pl-8"
+                aria-label="Search departments"
+              />
+            </div>
+            <ViewToggle view={view} onChange={setView} />
+          </div>
+          {query.error ? (
+            <ErrorState error={query.error} onRetry={() => query.refetch()} />
+          ) : query.isLoading ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }, (_, i) => (
+                <CardSkeleton key={i} className="h-52" />
+              ))}
+            </div>
+          ) : rows.length === 0 ? (
+            <EmptyState {...emptyProps} />
+          ) : (
+            <div className={cn("grid gap-3 sm:grid-cols-2 xl:grid-cols-3", query.isFetching && "opacity-70 transition-opacity")}>
+              {rows.map((d) => (
+                <DepartmentCard key={d.id} department={d} canWrite={canWrite} onEdit={openEdit} onDelete={onDelete} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          <div className="flex justify-end">
+            <ViewToggle view={view} onChange={setView} />
+          </div>
+          <DataTable
+            columns={columns}
+            data={rows}
+            loading={query.isLoading}
+            fetching={query.isFetching}
+            error={query.error}
+            onRetry={() => query.refetch()}
+            getRowId={(d) => d.id}
+            onRowClick={canWrite ? (d) => openEdit(d) : undefined}
+            search={{ value: search, onChange: setSearch, placeholder: "Search departments…" }}
+            empty={emptyProps}
+          />
+        </div>
+      )}
       <DepartmentDialog department={editing} open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
+  );
+}
+
+function SummaryTile({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  warn,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number | undefined;
+  hint?: string;
+  warn?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border bg-card p-3 shadow-xs">
+      <span className={cn("grid size-9 shrink-0 place-items-center rounded-lg", warn ? "bg-sev-medium/15 text-sev-medium" : "bg-primary/10 text-primary")}>
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="truncate text-xs text-muted-foreground">{label}</div>
+        <div className="text-xl font-semibold tabular-nums leading-tight">{value === undefined ? "—" : formatNumber(value)}</div>
+        {hint && <div className="truncate text-[11px] text-muted-foreground">{hint}</div>}
+      </div>
+    </div>
+  );
+}
+
+function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+  return (
+    <div className="inline-flex rounded-md border bg-card p-0.5" role="group" aria-label="Layout">
+      {(
+        [
+          ["cards", LayoutGrid, "Cards"],
+          ["table", List, "Table"],
+        ] as const
+      ).map(([v, Icon, label]) => (
+        <Button
+          key={v}
+          size="sm"
+          variant={view === v ? "secondary" : "ghost"}
+          className="h-7 gap-1.5 px-2.5"
+          aria-pressed={view === v}
+          onClick={() => onChange(v)}
+        >
+          <Icon className="size-3.5" /> {label}
+        </Button>
+      ))}
+    </div>
   );
 }
