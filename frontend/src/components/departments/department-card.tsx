@@ -112,6 +112,17 @@ export function DepartmentCard({
                 {d.manager.displayName}
               </span>
             </span>
+          ) : canWrite ? (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded px-1 font-medium text-sev-medium hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(d);
+              }}
+            >
+              <UserRound className="size-3" /> Assign manager
+            </button>
           ) : (
             <span className="flex items-center gap-1 text-sev-medium">
               <UserRound className="size-3" /> Not assigned
