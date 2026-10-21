@@ -2,8 +2,10 @@
 
 import * as React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { FileUp, MoreHorizontal, Pencil, ShieldCheck, ShieldOff, Unlock, UserCheck, UserPlus, UserX, Users } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { FileUp, IdCard, Lock, MoreHorizontal, Pencil, ShieldCheck, ShieldOff, Unlock, UserCheck, UserPlus, UserX, Users } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
+import { SummaryTile } from "@/components/common/summary-tile";
 import { DataTable } from "@/components/data-table/data-table";
 import { ClearFiltersButton, FilterSelect, enumOptions } from "@/components/data-table/filters";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -27,7 +29,7 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { initials } from "@/lib/utils";
-import { ROLE_KEYS, type User } from "@/types/api";
+import { ROLE_KEYS, type User, type UserSummary } from "@/types/api";
 import { roleMeta, userStatus, userStatusMeta } from "@/components/users/role-meta";
 import { CreateUserDialog, EditUserSheet } from "@/components/users/user-dialogs";
 import { UsersImportDialog } from "@/components/users/users-import-dialog";
@@ -47,6 +49,11 @@ export default function UsersPage() {
 
   const list = useListQuery<User>("users", "/users", { initial: { sortBy: "displayName", sortOrder: "asc" } });
   const f = list.state.filters;
+  const summary = useQuery({
+    queryKey: ["users", "summary"],
+    queryFn: ({ signal }) => api.get<UserSummary>("/users/summary", undefined, { signal }),
+  });
+  const s = summary.data;
 
   const { mutate: runAction } = useApiMutation(
     ({ user, action }: { user: User; action: UserAction }) => {
@@ -284,6 +291,18 @@ export default function UsersPage() {
           ) : undefined
         }
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <SummaryTile icon={Users} label="Active users" value={s?.active} hint={s ? `${s.inactive} inactive` : undefined} />
+        <SummaryTile
+          icon={ShieldCheck}
+          label="MFA enabled"
+          value={s?.mfaEnabled}
+          hint={s && s.active > 0 ? `${Math.round((s.mfaEnabled / s.active) * 100)}% of active users` : undefined}
+        />
+        <SummaryTile icon={IdCard} label="Missing Employee ID" value={s?.missingEmployeeCode} hint="Needed for self-enrollment" warn={!!s?.missingEmployeeCode} />
+        <SummaryTile icon={Lock} label="Locked out" value={s?.locked} hint="Too many failed sign-ins" warn={!!s?.locked} />
+      </div>
 
       <DataTable
         columns={columns}

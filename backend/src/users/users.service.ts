@@ -89,6 +89,20 @@ export class UsersService {
     return paginated(rows.map((r) => this.serialize(r)), q.page, q.pageSize, total);
   }
 
+  /** Headline counts for the Users page, limited to the users the actor can see. */
+  async summary(actor: AuthUser) {
+    const scope = userScope(actor);
+    const count = (extra: Prisma.UserWhereInput = {}) => this.prisma.user.count({ where: { AND: [scope, extra] } });
+    const [total, active, mfaEnabled, missingEmployeeCode, locked] = await Promise.all([
+      count(),
+      count({ isActive: true }),
+      count({ isActive: true, mfaEnabled: true }),
+      count({ isActive: true, employeeCode: null }),
+      count({ isActive: true, lockedUntil: { gt: new Date() } }),
+    ]);
+    return { total, active, inactive: total - active, mfaEnabled, missingEmployeeCode, locked };
+  }
+
   async get(id: string, actor: AuthUser) {
     const u = await this.prisma.user.findFirst({ where: { AND: [{ id }, userScope(actor)] }, select: USER_PUBLIC_SELECT });
     if (!u) throw new NotFoundException('User not found');

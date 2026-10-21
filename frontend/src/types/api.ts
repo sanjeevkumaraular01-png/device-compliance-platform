@@ -1074,6 +1074,16 @@ export interface Role {
   _count?: { users?: number };
 }
 
+/** GET /users/summary — counts within the caller's row scope. */
+export interface UserSummary {
+  total: number;
+  active: number;
+  inactive: number;
+  mfaEnabled: number;
+  missingEmployeeCode: number;
+  locked: number;
+}
+
 export interface Department {
   id: string;
   name: string;

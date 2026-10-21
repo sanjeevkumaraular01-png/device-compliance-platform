@@ -17,6 +17,12 @@ export class UsersController {
     return this.users.list(q, user);
   }
 
+  @Get('summary')
+  @RequirePermissions('users:read')
+  summary(@CurrentUser() user: AuthUser) {
+    return this.users.summary(user);
+  }
+
   @Get(':id')
   @RequirePermissions('users:read')
   get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {

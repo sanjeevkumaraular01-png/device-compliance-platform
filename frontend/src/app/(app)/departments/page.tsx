@@ -5,6 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useQuery } from "@tanstack/react-query";
 import { Building2, LayoutGrid, Laptop, List, Pencil, Plus, Search, Trash2, UserRound, Users } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
+import { SummaryTile } from "@/components/common/summary-tile";
 import { CardSkeleton, EmptyState, ErrorState } from "@/components/common/states";
 import { DataTable } from "@/components/data-table/data-table";
 import { Badge } from "@/components/ui/badge";
@@ -333,33 +334,6 @@ export default function DepartmentsPage() {
       )}
       <DepartmentDialog department={editing} open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
-  );
-}
-
-function SummaryTile({
-  icon: Icon,
-  label,
-  value,
-  hint,
-  warn,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: number | undefined;
-  hint?: string;
-  warn?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border bg-card p-3 shadow-xs">
-      <span className={cn("grid size-9 shrink-0 place-items-center rounded-lg", warn ? "bg-sev-medium/15 text-sev-medium" : "bg-primary/10 text-primary")}>
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0">
-        <div className="truncate text-xs text-muted-foreground">{label}</div>
-        <div className="text-xl font-semibold tabular-nums leading-tight">{value === undefined ? "—" : formatNumber(value)}</div>
-        {hint && <div className="truncate text-[11px] text-muted-foreground">{hint}</div>}
-      </div>
-    </div>
   );
 }
 
